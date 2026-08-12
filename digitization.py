@@ -616,22 +616,60 @@ def isolate_curve_points_mask(crop_bgr: np.ndarray, color: str) -> np.ndarray:
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
 
-def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3):
+def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3,
+                             border_artifact_area_fraction: float = 0.30,
+                             border_margin_fraction: float = 0.01):
     """Najde tazisko kazdeho samostatneho markera (connected component) a
     zoradi ich podla X - pre tahove skusky je strain monotonne rastuci s casom
     merania, takze zoradenie podla X zodpoveda fyzikalnemu poradiu merania
     (na rozdiel od spojitej ciary tu nehrozi 'vertikalny useky s viacerymi Y
     na jedno X', kedze kazdy marker je JEDEN diskretny nameran bod, nie
     spojita krivka ktoru treba sledovat pixel-po-pixeli).
-    Vrati (py, px) analogicky k digitize_mask_to_path."""
+
+    DOLEZITY REALNY NALEZ (JPEG kompresny artefakt): na JPG (stratovo
+    komprimovanom) zdrojovom obrazku sa objavili falosne 'markery' TESNE PRI
+    OKRAJI orezanej oblasti (0.04%-0.2% sirky, prakticky na osi Y) - kompresne
+    artefakty okolo ostrej ciernej hrany osi, zafarbene dost 'cervene' na to,
+    aby presli farebnym prahom. Tieto mali VYRAZNE MENSIU PLOCHU (8-21px) nez
+    typicky marker (medián 77px v tomto obrazku).
+
+    DOLEZITA OPRAVA (prvy pokus bol prilis hrubi): PLOSNE filtrovanie podla
+    plochy samotnej (napr. 'vsetko pod 35% medianu') odstranilo 62 zo 269
+    bodov - rozlozenie plochy je totiz PLYNULE (3 az 667), nie dvojvrstvove,
+    takze mnoho GENUINNYCH bodov (mensie kvoli prekryvaniu susednych markerov,
+    orezaniu MORPH_OPEN a pod.) ma tiez malu plochu. Skutocny rozlisujuci znak
+    NIE JE len 'mala plocha', ale KOMBINACIA 'mala plocha A velmi blizko
+    okraja orezanej oblasti' - filtrujeme preto LEN body, ktore su OBOJE
+    naraz: (1) v ramci `border_margin_fraction` (default 1%) sirky/vysky od
+    ktoreholvek okraja, A (2) mensie nez `border_artifact_area_fraction`
+    (default 30%) medianu plochy. Toto zasiahne SPECIFICKY tento nalezeny
+    artefakt, nie legitimne mensie markery kdekolvek inde na krivke."""
     n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_points, connectivity=8)
     if n_labels <= 1:
         raise RuntimeError("Po izolacii nezostali ziadne bodove markery - skontroluj obrazok.")
 
-    valid = [i for i in range(1, n_labels) if stats[i, cv2.CC_STAT_AREA] >= min_marker_area]
+    h_img, w_img = mask_points.shape[:2]
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    median_area = float(np.median(areas))
+    area_threshold = border_artifact_area_fraction * median_area
+    margin_x = border_margin_fraction * w_img
+    margin_y = border_margin_fraction * h_img
+
+    valid = []
+    for i in range(1, n_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < min_marker_area:
+            continue
+        cx, cy = centroids[i]
+        near_border = (cx < margin_x or cx > w_img - margin_x or
+                       cy < margin_y or cy > h_img - margin_y)
+        if near_border and area < area_threshold:
+            continue  # pravdepodobny kompresny/okrajovy artefakt, nie skutocny marker
+        valid.append(i)
+
     if not valid:
         raise RuntimeError(
-            f"Ziadny marker nedosiahol minimalnu plochu {min_marker_area}px - "
+            "Po filtrovani okrajovych artefaktov nezostal ziadny pouzitelny marker - "
             "skontroluj kvalitu/rozlisenie obrazka."
         )
 
