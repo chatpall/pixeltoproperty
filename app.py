@@ -19,6 +19,8 @@ share.streamlit.io.
 import matplotlib
 matplotlib.use("Agg")  # bezhlavy backend - nutne na serveri bez displeja
 
+import traceback
+
 import cv2
 import numpy as np
 import streamlit as st
@@ -89,6 +91,8 @@ if st.session_state.img_bgr is not None:
             st.session_state.true_result = None
         except Exception as e:
             st.error(f"Chyba pri detekcii rámu/osí: {e}")
+            with st.expander("Zobraziť technický detail (presný riadok chyby)"):
+                st.code(traceback.format_exc())
 
     if st.session_state.frame_info is not None:
         frame = st.session_state.frame_info
@@ -145,6 +149,8 @@ if st.session_state.img_bgr is not None:
                 st.session_state.true_result = true_result
             except Exception as e:
                 st.error(f"Chyba pri digitalizácii/výpočte: {e}")
+                with st.expander("Zobraziť technický detail (presný riadok chyby)"):
+                    st.code(traceback.format_exc())
 
 # ----------------------------------------------------------------------------
 # KROK 3: Zobrazenie vysledkov (Modul 2 - inzinierske vlastnosti)
