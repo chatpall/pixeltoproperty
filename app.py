@@ -248,26 +248,38 @@ if st.session_state.true_result is not None:
                f"'{tr.classification.form_guess}', {agree})")
 
     holl = tr.hollomon
-    col1, col2, col3 = st.columns(3)
-    col1.metric("n (exponent spevnenia)", f"{holl.n:.4f}")
-    col2.metric("K", f"{holl.K_MPa:.1f} MPa")
-    col3.metric("R²", f"{holl.r2:.4f}")
-
-    fig2, ax2 = plt.subplots(figsize=(8, 6))
     true_c = tr.true_curve
-    ax2.plot(true_c.true_strain, true_c.true_stress, "o", markersize=3, color="#d62728",
-             alpha=0.6, label=f"true krivka (po Rm, {len(true_c.true_strain)} bodov)")
-    eps_fit = np.linspace(max(holl.strain_range[0], 1e-6), holl.strain_range[1], 100)
-    sigma_fit = holl.K_MPa * eps_fit ** holl.n
-    eps_elastic_fit = sigma_fit / props.elastic_slope
-    eps_fit_display = eps_fit + eps_elastic_fit + props.epsilon0
-    ax2.plot(eps_fit_display, sigma_fit, "--", linewidth=2, color="black",
-             label=f"Hollomon: n={holl.n:.3f}, K={holl.K_MPa:.0f}")
-    ax2.set_xlabel("true strain")
-    ax2.set_ylabel("true stress (MPa)")
-    ax2.legend(fontsize=9, loc="lower right")
-    ax2.grid(alpha=0.3)
-    st.pyplot(fig2)
+
+    if not holl.applicable:
+        st.warning(f"Hollomonov fit nie je dostupný: {holl.message}")
+        fig2, ax2 = plt.subplots(figsize=(8, 6))
+        ax2.plot(true_c.true_strain, true_c.true_stress, "o", markersize=3, color="#d62728",
+                 alpha=0.6, label=f"true krivka (po Rm, {len(true_c.true_strain)} bodov)")
+        ax2.set_xlabel("true strain")
+        ax2.set_ylabel("true stress (MPa)")
+        ax2.legend(fontsize=9, loc="lower right")
+        ax2.grid(alpha=0.3)
+        st.pyplot(fig2)
+    else:
+        col1, col2, col3 = st.columns(3)
+        col1.metric("n (exponent spevnenia)", f"{holl.n:.4f}")
+        col2.metric("K", f"{holl.K_MPa:.1f} MPa")
+        col3.metric("R²", f"{holl.r2:.4f}")
+
+        fig2, ax2 = plt.subplots(figsize=(8, 6))
+        ax2.plot(true_c.true_strain, true_c.true_stress, "o", markersize=3, color="#d62728",
+                 alpha=0.6, label=f"true krivka (po Rm, {len(true_c.true_strain)} bodov)")
+        eps_fit = np.linspace(max(holl.strain_range[0], 1e-6), holl.strain_range[1], 100)
+        sigma_fit = holl.K_MPa * eps_fit ** holl.n
+        eps_elastic_fit = sigma_fit / props.elastic_slope
+        eps_fit_display = eps_fit + eps_elastic_fit + props.epsilon0
+        ax2.plot(eps_fit_display, sigma_fit, "--", linewidth=2, color="black",
+                 label=f"Hollomon: n={holl.n:.3f}, K={holl.K_MPa:.0f}")
+        ax2.set_xlabel("true strain")
+        ax2.set_ylabel("true stress (MPa)")
+        ax2.legend(fontsize=9, loc="lower right")
+        ax2.grid(alpha=0.3)
+        st.pyplot(fig2)
 
 st.divider()
 st.caption(

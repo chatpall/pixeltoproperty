@@ -90,6 +90,10 @@ class HollomonFit:
     r2: float               # kvalita fitu (log-log linearna regresia)
     n_points: int
     strain_range: tuple    # (min, max) true plastickeho strain pouziteho vo fite
+    applicable: bool = True   # False = fit sa NEDAL spocitat (napr. krehky material
+                                # s malym poctom bodov medzi Rp0.2 a Rm) - LEGITIMNY
+                                # vysledok, nie chyba (viz message)
+    message: str = "OK."
 
 
 def compute_hollomon_fit(true_curve: TrueCurve, elastic_slope: float, epsilon0: float,
@@ -116,7 +120,14 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
                         epsilon0: float, rp02_index: int) -> HollomonFit:
     """Spolocne jadro Hollomon fitu, pouzitelne na LUBOVOLNE (strain,stress) pole -
     bud uz skutocne true (z convert_engineering_to_true), alebo SUROVE nekonvertovane
-    data (pouzivane v _classify_curve_form na otestovanie hypotezy 'vstup uz je true')."""
+    data (pouzivane v _classify_curve_form na otestovanie hypotezy 'vstup uz je true').
+
+    DOLEZITA OPRAVA (realny nalez z nasadenia): predtym RAISE-ovalo RuntimeError
+    pri nedostatku bodov (napr. krehky material s malym poctom bodov medzi Rp0.2
+    a Rm) - to spadalo CELU appku, aj ked ide o legitimny, ocakavany pripad (rovnaky
+    princip ako Rp0.2='N/F' pre krehke materialy v module 2). Teraz sa namiesto toho
+    vrati HollomonFit s applicable=False - volajuci (GUI/appka) to zobrazi ako
+    'nedostupne', nie ako padnutu appku."""
     eps_elastic = stress / elastic_slope
     eps_plastic = strain - epsilon0 - eps_elastic
 
@@ -126,9 +137,13 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
 
     mask = seg_eps > 1e-9
     if mask.sum() < 5:
-        raise RuntimeError(
-            "Nedostatok bodov s kladnym plastickym strain medzi Rp0.2 a Rm "
-            "pre Hollomonov fit (potrebnych aspon 5)."
+        return HollomonFit(
+            K_MPa=float("nan"), n=float("nan"), r2=float("nan"),
+            n_points=int(mask.sum()), strain_range=(float("nan"), float("nan")),
+            applicable=False,
+            message=f"Nedostatok bodov ({int(mask.sum())}) s kladnym plastickym strain "
+                    f"medzi Rp0.2 a Rm pre Hollomonov fit (potrebnych aspon 5) - "
+                    f"pravdepodobne krehky material bez vyraznej plastickej oblasti.",
         )
 
     log_eps = np.log(seg_eps[mask])
@@ -185,25 +200,20 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     oznacenia) vysiel rozdiel R² zanedbatelny (~0.0001) - spravne vratene ako
     'neurcite' namiesto vymyslania si istoty, ktora tam nie je.
 
-    DOLEZITA OPRAVA (realny nalez z nasadenia): _hollomon_fit_core moze zlyhat
-    (RuntimeError) na krehkych materialoch s malym poctom bodov medzi Rp0.2 a
-    Rm (napr. po zaokruhleni indexov nezostane dost bodov s kladnym plastickym
-    strain). Predtym to spadlo celu appku - teraz sa taky pripad povazuje za
-    'neurcite' (nedostatok dokazov pre klasifikaciu), NIE za chybu - presne v
-    duchu filozofie tejto funkcie ('radsej priznat neistotu nez si vymyslat')."""
-    try:
-        r2_as_engineering = compute_hollomon_fit(
-            convert_engineering_to_true(strain, stress, is_percent, rm_index),
-            elastic_slope, epsilon0, rp02_index, is_percent,
-        ).r2
-    except RuntimeError:
-        r2_as_engineering = None
-    try:
-        r2_as_true = _hollomon_fit_core(
-            strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
-        ).r2
-    except RuntimeError:
-        r2_as_true = None
+    DOLEZITA OPRAVA (realny nalez z nasadenia): _hollomon_fit_core uz NEVYHADZUJE
+    vynimku pri nedostatku bodov (krehky material) - vracia HollomonFit s
+    applicable=False (viz jej docstring). Preto tu kontrolujeme .applicable,
+    nie try/except. Ak niektory z dvoch fitov nie je aplikovatelny, klasifikacia
+    sa poctivo oznaci ako 'neurcite' (nedostatok dokazov), NIE ako chyba."""
+    fit_engineering = compute_hollomon_fit(
+        convert_engineering_to_true(strain, stress, is_percent, rm_index),
+        elastic_slope, epsilon0, rp02_index, is_percent,
+    )
+    fit_true = _hollomon_fit_core(
+        strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
+    )
+    r2_as_engineering = fit_engineering.r2 if fit_engineering.applicable else None
+    r2_as_true = fit_true.r2 if fit_true.applicable else None
 
     if r2_as_engineering is None or r2_as_true is None:
         return FormClassification(
