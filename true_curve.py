@@ -184,14 +184,32 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     jasnym rozdielom R² (0.987 vs 0.970). Na druhom obrazku (bez jasneho
     oznacenia) vysiel rozdiel R² zanedbatelny (~0.0001) - spravne vratene ako
     'neurcite' namiesto vymyslania si istoty, ktora tam nie je.
-    """
-    r2_as_engineering = compute_hollomon_fit(
-        convert_engineering_to_true(strain, stress, is_percent, rm_index),
-        elastic_slope, epsilon0, rp02_index, is_percent,
-    ).r2
-    r2_as_true = _hollomon_fit_core(
-        strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
-    ).r2
+
+    DOLEZITA OPRAVA (realny nalez z nasadenia): _hollomon_fit_core moze zlyhat
+    (RuntimeError) na krehkych materialoch s malym poctom bodov medzi Rp0.2 a
+    Rm (napr. po zaokruhleni indexov nezostane dost bodov s kladnym plastickym
+    strain). Predtym to spadlo celu appku - teraz sa taky pripad povazuje za
+    'neurcite' (nedostatok dokazov pre klasifikaciu), NIE za chybu - presne v
+    duchu filozofie tejto funkcie ('radsej priznat neistotu nez si vymyslat')."""
+    try:
+        r2_as_engineering = compute_hollomon_fit(
+            convert_engineering_to_true(strain, stress, is_percent, rm_index),
+            elastic_slope, epsilon0, rp02_index, is_percent,
+        ).r2
+    except RuntimeError:
+        r2_as_engineering = None
+    try:
+        r2_as_true = _hollomon_fit_core(
+            strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
+        ).r2
+    except RuntimeError:
+        r2_as_true = None
+
+    if r2_as_engineering is None or r2_as_true is None:
+        return FormClassification(
+            form_guess="neurcite", r2_as_engineering=r2_as_engineering,
+            r2_as_true=r2_as_true, margin=None,
+        )
 
     margin = r2_as_true - r2_as_engineering
     if margin > margin_threshold:

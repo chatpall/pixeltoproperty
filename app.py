@@ -32,6 +32,22 @@ import engineering_properties as eng
 import true_curve as tc
 
 
+def _resize_for_display(img_bgr: np.ndarray, max_dim: int = 700) -> np.ndarray:
+    """Zmensi obrazok LEN PRE NAHLAD v prehliadaci (nie pre samotne spracovanie -
+    to stale bezi na PLNOM rozliseni originalu, presnost sa tymto nemeni).
+    DOLEZITY REALNY NALEZ pri nasadeni: 'use_container_width=True' obmedzuje
+    LEN SIRKU zobrazenia - ak je zdrojovy obrazok VYSOKY (velke rozlisenie/
+    vyskovy pomer strán), vysledny nahlad moze byt aj tak obrovsky (pouzivatel
+    musi neprimerane vela scrollovat). Tu obmedzime VACSI z rozmerov (sirku
+    alebo vysku) na `max_dim` pixelov, pomer strán ostava zachovany."""
+    h, w = img_bgr.shape[:2]
+    scale = max_dim / max(h, w)
+    if scale >= 1.0:
+        return img_bgr  # uz je dost maly, netreba zvacsovat
+    new_w, new_h = int(w * scale), int(h * scale)
+    return cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
 st.set_page_config(page_title="PixelToProperty", page_icon="📐", layout="wide")
 st.title("📐 PixelToProperty")
 st.caption(
@@ -101,8 +117,8 @@ if st.session_state.img_bgr is not None:
         vis = st.session_state.img_bgr.copy()
         cv2.rectangle(vis, (frame.x_left, frame.y_top), (frame.x_right, frame.y_bottom),
                       (0, 255, 0), 3)
-        st.image(cv2.cvtColor(vis, cv2.COLOR_BGR2RGB), caption="Detegovaný rám (zelený obdĺžnik)",
-                 use_container_width=True)
+        st.image(cv2.cvtColor(_resize_for_display(vis), cv2.COLOR_BGR2RGB),
+                 caption="Detegovaný rám (zelený obdĺžnik)")
 
         n_x_out = int(np.sum(~calib.x_inliers))
         n_y_out = int(np.sum(~calib.y_inliers))
