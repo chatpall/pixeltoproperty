@@ -1,0 +1,9 @@
+streamlit
+opencv-python-headless
+numpy
+scipy
+scikit-image
+networkx
+matplotlib
+pytesseract
+Pillow
