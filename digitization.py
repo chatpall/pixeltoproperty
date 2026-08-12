@@ -113,7 +113,13 @@ def detect_frame(gray: np.ndarray) -> Frame:
         cur_h, cur_v = [], []
         if lines is not None:
             for l in lines:
-                x1, y1, x2, y2 = l[0]
+                # DOLEZITA OPRAVA (realny nalez z nasadenia na Streamlit Cloud):
+                # cv2.HoughLinesP vracia riadky v tvare (1,4) vo VACSINE verzii
+                # OpenCV (l[0] = [x1,y1,x2,y2]), ale v inej verzii/builde moze
+                # vratit priamo tvar (4,) - vtedy l[0] je LEN JEDNO CISLO, nie
+                # pole, co sposobi 'cannot unpack non-iterable numpy.int32
+                # object'. .reshape(-1) funguje spravne v OBOCH pripadoch.
+                x1, y1, x2, y2 = np.asarray(l).reshape(-1)
                 if abs(y1 - y2) < 5:
                     cur_h.append((y1 + y2) // 2)
                 elif abs(x1 - x2) < 5:
@@ -526,8 +532,8 @@ def isolate_curve_mask(crop_bgr: np.ndarray, color: str) -> np.ndarray:
         grid_mask = np.zeros_like(dark_mask)
         if lines is not None:
             for l in lines:
-                x1, y1, x2, y2 = l[0]
-                cv2.line(grid_mask, (x1, y1), (x2, y2), 255, thickness=2)
+                x1, y1, x2, y2 = np.asarray(l).reshape(-1)  # viz poznamka pri detect_frame
+                cv2.line(grid_mask, (int(x1), int(y1)), (int(x2), int(y2)), 255, thickness=2)
         mask = cv2.bitwise_and(dark_mask, cv2.bitwise_not(grid_mask))
 
     kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
