@@ -215,8 +215,8 @@ def detect_frame(gray: np.ndarray) -> Frame:
     # Toto zhlukovanie uz existovalo pre h_lines, teraz rovnako aj pre v_lines.
     if not h_lines:
         raise RuntimeError(
-            "Nepodarilo sa detegovat ram grafu (osi). Skus iny obrazok "
-            "s vyraznejsimi/kontrastnejsimi osami."
+            "Could not detect the chart frame (axes). Try a different image "
+            "with more distinct/higher-contrast axes."
         )
 
     # h_lines moze obsahovat aj OSAMELE ciary MIMO samotneho grafu (napr. deliaca
@@ -233,7 +233,29 @@ def detect_frame(gray: np.ndarray) -> Frame:
         else:
             clusters.append([v])
     largest_cluster = max(clusters, key=len)
-    h_lines = largest_cluster
+
+    # DOLEZITA OPRAVA (realny nalez, testovanie na obrazkoch BEZ mriezky -
+    # napr. jednoduchy graf s tenkym ramikom a ziadnymi vnutornymi gridlines):
+    # povodne 'ber LEN najvacsi zhluk' zlyhava, ked graf NEMA hustu mriezku a
+    # h_lines teda obsahuje LEN 2 genuinne fyzicke ciary (horny a dolny okraj
+    # ramu), kazda reprezentovana malym zhlukom 2 (takmer zhodnych, anti-
+    # aliasing) detekcii. Oba zhluky maju ROVNAKU velkost - Pythonovo 'max()'
+    # pri zhode vzdy vrati PRVY (teda vzdy horny), cim sa DOLNY okraj ramu
+    # celkom zahodi a y_top/y_bottom skolabuju na pribl. rovnaku hodnotu
+    # (napr. 20 a 22 namiesto 20 a 487 - cely ram sa scvrkne na 2px). Toto sa
+    # nestane pri hustej mriezke (tam je hlavny zhluk desiatky ciar, kdekolvek
+    # osamela ciara mimo grafu ostava vyrazne mensia - povodny predpoklad
+    # 'velkost = spravnost' tam stale plati).
+    #
+    # Riesenie: namiesto LEN najvacsieho zhluku, zoberieme VSETKY zhluky, ktore
+    # su porovnatelne velke (aspon polovica velkosti najvacsieho) - to zachova
+    # povodne spravanie pre hustu mriezku (osamela 1-2 ciarova 'sum' zhluk je
+    # vzdy VYRAZNE mensia nez desiatky-ciarovy hlavny zhluk, teda sa oreze), ale
+    # spravne zachova OBA hranicne zhluky pri jednoduchom ramiku bez mriezky
+    # (kde su oba zhluky rovnako 'male', ale OBA su genuinne).
+    min_significant_size = max(1, -(-len(largest_cluster) // 2))  # ceil(len/2)
+    significant_clusters = [c for c in clusters if len(c) >= min_significant_size]
+    h_lines = sorted({v for c in significant_clusters for v in c})
 
     # DALSI REALNY NALEZ: aj NAJVACSI zhluk h_lines vie obsahovat jednu
     # (alebo viac) OSAMELYCH hodnot na svojom OKRAJI, ktore su este v ramci
@@ -282,9 +304,9 @@ def detect_frame(gray: np.ndarray) -> Frame:
         candidate_cols = np.where(col_density > 0.85 * row_count)[0]
         if len(candidate_cols) == 0:
             raise RuntimeError(
-                "Nepodarilo sa detegovat vertikalne hranice ramu grafu (osi) - "
-                "ani Houghovou transformaciou, ani stlpcovym profilom hustoty hran. "
-                "Skus iny obrazok s vyraznejsimi/kontrastnejsimi osami."
+                "Could not detect the vertical chart boundaries (axes) - neither "
+                "via Hough transform nor via the column edge-density profile. "
+                "Try a different image with more distinct/higher-contrast axes."
             )
         # zoskupime bilzke stlpce (do 3px) do jednej hranice
         v_lines = []
@@ -347,6 +369,94 @@ class AxisCalibration:
 NUMBER_RE = re.compile(r"^-?\d+\.?\d*$")
 
 
+def _ocr_whole_strip_tesseract(strip_bin: np.ndarray, horizontal: bool, scale: int):
+    """PRISTUP A: cely pruh naraz, jeden Tesseract vola s '--psm 6' (predpoklad
+    'jeden blok textu'). Rychle, a na ostro renderovanom/husto popisanom
+    obrazku (napr. screenshot z matplotlib) spolahlivo presne - ALE: overene
+    na realnych obrazkoch (viz sprievodna dokumentacia), ze pri RIEDKO
+    rozmiestnenych tickoch na sirokom pruhu psm6 obcas STRACA DESATINNU
+    BODKU (napr. '0.2' precitane ako '2', '1.6' ako '16') - nebezpecne, lebo
+    vysledok VYZERA vierohodne (je to stale cislo), a mohol by tak nenapadne
+    prejst cez RANSAC ako zhodna, ale radovo posunuta kalibracia."""
+    data = pytesseract.image_to_data(
+        strip_bin, config="--psm 6 -c tessedit_char_whitelist=0123456789.-",
+        output_type=pytesseract.Output.DICT,
+    )
+    results = []
+    for i in range(len(data["text"])):
+        txt = data["text"][i].strip()
+        if not NUMBER_RE.match(txt):
+            continue
+        value = float(txt)
+        if horizontal:
+            center = (data["left"][i] + data["width"][i] / 2) / scale
+        else:
+            center = (data["top"][i] + data["height"][i] / 2) / scale
+        results.append((center, value))
+    return results
+
+
+def _ocr_per_candidate_tesseract(strip_bin: np.ndarray, horizontal: bool, scale: int, pad: int = 6):
+    """PRISTUP B: najprv connected-components na binarnom pruhu najde KAZDY
+    tick popisok samostatne (dilatacia zluci cislice/bodku/minus PATRIACE K
+    SEBE - vzdy HORIZONTALNE, text sa cita horizontalne aj v uzkom vertikalnom
+    y_strip), orezany crop kazdeho sa potom OCR-uje samostatne (psm 7 - 'jeden
+    riadok textu'). Toto obchadza zavislost na tom, ako dobre Tesseract sam
+    uhadne segmentaciu riedko rozmiestnenych cisel v psm6 - realne overene, ze
+    vie najst ticky, ktore whole-strip pristup uplne minie (napr. Y-os s
+    ciernym tenkym pismom bez mriezky), a spolahlivejsie zachytava desatinne
+    bodky. NEVYHODA: citlive na sirku zlucovacieho jadra vzhladom na
+    konkretny font/mierku - pri niektorych (najma velmi ostro renderovanych)
+    obrazkoch vie naopak rozbit jedno cislo na viacero falosnych fragmentov.
+    Presne preto sa NEPOUZIVA SAMOSTATNE, ale len ako DOPLNOK k whole-strip
+    pristupu (viz _ocr_axis_ticks) - obe metody maju KOMPLEMENTARNE, nie
+    prekryvajuce sa zlyhania, zjednotenie kandidatov + nasledny RANSAC fit
+    (uz existujuci v _robust_linear_fit) odfiltruje sum z oboch strán."""
+    inv = strip_bin if (strip_bin == 255).mean() < 0.5 else cv2.bitwise_not(strip_bin)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(2.2 * scale), 2))
+    merged = cv2.dilate(inv, kernel)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(merged, connectivity=8)
+
+    results = []
+    for lbl in range(1, n):
+        x, y, w, h, area = stats[lbl]
+        if area < 4:
+            continue
+        x0, y0 = max(0, x - pad), max(0, y - pad)
+        x1, y1 = min(strip_bin.shape[1], x + w + pad), min(strip_bin.shape[0], y + h + pad)
+        crop = strip_bin[y0:y1, x0:x1]
+        if crop.size == 0:
+            continue
+        txt = pytesseract.image_to_string(
+            crop, config="--psm 7 -c tessedit_char_whitelist=0123456789.-"
+        ).strip()
+        if not NUMBER_RE.match(txt):
+            continue
+        value = float(txt)
+        cx, cy = x0 + (x1 - x0) / 2, y0 + (y1 - y0) / 2
+        center = (cx if horizontal else cy) / scale
+        results.append((center, value))
+    return results
+
+
+def _merge_tick_candidates(results: list, pos_tol: float = 3.0) -> list:
+    """Zjednoti kandidatov z oboch OCR pristupov a odstrani DUPLICITY (rovnaka
+    pozicia AJ rovnaka hodnota, v ramci pos_tol px - typicky ked obe metody
+    najdu ten isty spravny tick). Ponechava VSETKY nezhodne/protirecive
+    kandidaty (rozne hodnoty na blizkej pozicii) - to je zamerne, tie ma
+    rozhodnut az RANSAC fit v _robust_linear_fit, nie tento krok."""
+    merged = []
+    for center, value in results:
+        is_dup = False
+        for c2, v2 in merged:
+            if abs(c2 - center) <= pos_tol and v2 == value:
+                is_dup = True
+                break
+        if not is_dup:
+            merged.append((center, value))
+    return merged
+
+
 def _ocr_axis_ticks(strip: np.ndarray, horizontal: bool, scale: int = 4):
     """OCR na pruhu obrazka (popisky osi). Kluceve pre spolahlivost:
     - Otsu threshold (nie pevna hodnota) - prisposobi sa kontrastu obrazka
@@ -356,27 +466,48 @@ def _ocr_axis_ticks(strip: np.ndarray, horizontal: bool, scale: int = 4):
 
     Pouzije Tesseract, ak je dostupny (rychlejsi). Ak nie (napr. bez admin
     prav na instalaciu systemoveho binarky), automaticky padne na EasyOCR
-    (cisto pip-installable alternativa - viz poznamka na zaciatku modulu)."""
+    (cisto pip-installable alternativa - viz poznamka na zaciatku modulu).
+
+    DOLEZITA ZMENA (na zaklade testov na 6 realnych zdrojovych obrazkoch -
+    viz sprievodna dokumentacia): Tesseract vetva teraz doplna whole-strip
+    pristup (_ocr_whole_strip_tesseract, povodny) o per-candidate izolovanu
+    OCR (_ocr_per_candidate_tesseract, novy) - ALE NIE VZDY, len ako
+    FALLBACK/DOPLNOK ked whole-strip sam osebe nasiel PRILIS MALO kandidatov
+    (< MIN_WHOLE_STRIP_CANDIDATES).
+
+    DOLEZITY REALNY NALEZ Z TESTOVANIA (naivne VZDY zjednotit oba pristupy
+    bolo NEBEZPECNE, nie len neskodne): na `tphm_...jpg` (JPEG, viacciferne
+    hodnoty 100-700) whole-strip sam osebe spravne nasiel 7/12 kandidatov a
+    dal spravny fit (slope=-2.03). Po pridani per-candidate kandidatov VZDY
+    (bez podmienky) sa objavilo mnozstvo FRAGMENTOV cislic (napr. '500'
+    rozpadnute na samostatne '5','0','0' - digit-merging kernel v
+    _ocr_per_candidate_tesseract nedokaze spolahlivo zlucit cislice v ramci
+    jedneho popisku na kazdom obrazku/fonte). RANSAC fit potom NASIEL INU,
+    VACSIU nahodne 'linearnu' skupinu MEDZI temito fragmentmi (9 bodov:
+    0,1,2,3,4,9,50,50,100) - a kedze RANSAC maximalizuje POCET inlierov, nie
+    spravnost, tato falosna skupina VYHRALA nad spravnymi hodnotami (fit
+    vysiel slope=0.107 namiesto -2.03 - kompletne nepouzitelna kalibracia,
+    TICHO, bez chyboveho hlasenia). K tomuto doslo LEN preto, ze whole-strip
+    uz mal dost kandidatov (12) - pridavat dalsie tam bolo cisto rizikove,
+    ziadny benefit. Preto: per-candidate sa spusti LEN ked whole-strip
+    sam nestaci (MALO kandidatov), nie vzdy - to isti benefit (zachrani
+    obrazky, kde whole-strip zlyha uplne) bez tejto regresie (nepridava
+    zbytocny sum tam, kde uz whole-strip funguje dobre)."""
+    MIN_WHOLE_STRIP_CANDIDATES = 4  # pod touto hranicou uz whole-strip sam o sebe
+                                     # neposkytuje spolahlivy fit (viz calibrate_axes
+                                     # docstring - odporucane min. 3-4 body) - vtedy
+                                     # ma zmysel riskovat pridanie per-candidate sumu,
+                                     # kedze alternativa je castejsie "OCR naslo 0-1
+                                     # citatelnych cisel" tvrda chyba.
     strip_big = cv2.resize(strip, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     if TESSERACT_AVAILABLE:
         _, strip_bin = cv2.threshold(strip_big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        data = pytesseract.image_to_data(
-            strip_bin, config="--psm 6 -c tessedit_char_whitelist=0123456789.-",
-            output_type=pytesseract.Output.DICT,
-        )
-        results = []
-        for i in range(len(data["text"])):
-            txt = data["text"][i].strip()
-            if not NUMBER_RE.match(txt):
-                continue
-            value = float(txt)
-            if horizontal:
-                center = (data["left"][i] + data["width"][i] / 2) / scale
-            else:
-                center = (data["top"][i] + data["height"][i] / 2) / scale
-            results.append((center, value))
-        return results
+        whole = _ocr_whole_strip_tesseract(strip_bin, horizontal, scale)
+        if len(whole) >= MIN_WHOLE_STRIP_CANDIDATES:
+            return whole
+        per_candidate = _ocr_per_candidate_tesseract(strip_bin, horizontal, scale)
+        return _merge_tick_candidates(whole + per_candidate)
 
     if EASYOCR_AVAILABLE:
         reader = _get_easyocr_reader()
@@ -408,7 +539,7 @@ def _robust_linear_fit(px, val, n_iters=500, threshold_frac=0.02, seed=0):
     val = np.asarray(val, dtype=float)
     n = len(px)
     if n < 2:
-        raise RuntimeError("Potrebne aspon 2 body pre linearny fit.")
+        raise RuntimeError("Need at least 2 points for a linear fit.")
     if n == 2:
         slope = (val[1] - val[0]) / (px[1] - px[0])
         intercept = val[0] - slope * px[0]
@@ -487,27 +618,51 @@ def _find_first_text_band(strip_gray: np.ndarray, axis="rows", max_search: int =
         # testovanych obrazkoch), ale uz vylucuje typicky anti-aliasing sum
         # tesne pri osiach (ten je typicky <3%).
         min_ink_fraction = max(0.03, relative_frac * max_profile) if max_profile > 0 else 0.03
+    else:
+        max_profile = float(np.percentile(profile, 90)) if len(profile) else 0.0
 
     n = len(profile)
     if max_search is not None:
         n = min(n, max_search)
 
+    # DOLEZITA OPRAVA (realny nalez): riadok/stlpec TESNE PRI OSOVEJ CIARE (napr.
+    # zvysok tick-znaciek alebo anti-aliasing tesne pod ramom) vie mat ink hustotu
+    # NAD min_ink_fraction (napr. 3.8%), ale este vyrazne NIZSIU nez skutocny text
+    # (18-30% v testovanych obrazkoch) - povodna logika PRIJALA prvy takyto sliver
+    # ako 'start', a kedze za nim nasledoval genuinny gap (skutocny text bol az za
+    # medzerou), pas sa PREDCASNE UZAVREL na tomto slivri namiesto pokracovania k
+    # skutocnemu textu (realny nalez: band vysiel (0,5) namiesto spravnych (11,25),
+    # obrazok 475406_1_En_29_Fig1_HTML.png). Riesenie: pas sa AKCEPTUJE ako finalny
+    # LEN ak jeho SPICKOVA hustota dosahuje aspon polovicu 90. percentilu celeho
+    # profilu (teda je porovnatelna so skutocnym textom, nie len tesne nad
+    # minimalnym prahom) - inak sa zahodí ako sum a hladanie POKRACUJE dalej.
+    peak_confirm_threshold = 0.5 * max_profile if max_profile > 0 else 0.0
+
     start = None
     gap_count = 0
     end = None
+    peak_in_run = 0.0
     for i in range(n):
         has_ink = profile[i] > min_ink_fraction
         if start is None:
             if has_ink:
                 start = i
+                peak_in_run = profile[i]
         else:
             if has_ink:
                 gap_count = 0
+                peak_in_run = max(peak_in_run, profile[i])
             else:
                 gap_count += 1
                 if gap_count >= gap_to_stop:
-                    end = i - gap_count + 1
-                    break
+                    if peak_in_run >= peak_confirm_threshold:
+                        end = i - gap_count + 1
+                        break
+                    # sliver bez genuinneho textu (napr. tick-znacky pri osi) -
+                    # zahodit a pokracovat v hladani nasledujuceho pasu
+                    start = None
+                    gap_count = 0
+                    peak_in_run = 0.0
     if start is None:
         return None
     if end is None:
@@ -560,6 +715,18 @@ def calibrate_axes(gray: np.ndarray, frame: Frame) -> AxisCalibration:
                 title_text = ""
             if "%" in title_text:
                 x_is_percent_hint = True
+            elif "mm" in title_text.lower():
+                # DOLEZITY REALNY NALEZ: os oznacena "(mm/mm)" (bezny zapis pre
+                # BEZROZMERNU/zlomkovu deformaciu, napr. TRUE strain krivky) je
+                # JASNY DOKAZ, ze os NIE JE v percentach - aj ked OCR nemusi
+                # precitat lomítko presne (napr. "mm/mm" sa precitalo ako
+                # "mnymm"), retazec "mm" samotny prezije aj tuto chybu OCR.
+                # DOLEZITE: bez tohto explicitneho signalu magnitude-based
+                # odhad (max hodnota > 1.5 => percenta) OMYLOM vyhodnotil TRUE
+                # strain os siahajucu do 1.5 (t.j. 150% skutocnej deformacie,
+                # bezne u vysoko taznych materialov) ako "percenta" - E vyslo
+                # 624 GPa namiesto realistickych ~69 GPa (chyba radovo 9x).
+                x_is_percent_hint = False
 
     # Y-os: hladame prvy pas textu VLAVO OD ramu. Prehladavame SPRAVA DOLAVA
     # (od osi smerom von), preto strip najprv vyrezeme a OTOCIME.
@@ -581,9 +748,9 @@ def calibrate_axes(gray: np.ndarray, frame: Frame) -> AxisCalibration:
 
     if len(x_ticks) < 2 or len(y_ticks) < 2:
         raise RuntimeError(
-            f"OCR naslo len {len(x_ticks)} citatelnych cisel na osi X a "
-            f"{len(y_ticks)} na osi Y (potrebne aspon 2 na kazdej). "
-            "Skus obrazok s ostrejsimi/vacsimi popiskami."
+            f"OCR only found {len(x_ticks)} readable numbers on the X axis and "
+            f"{len(y_ticks)} on the Y axis (need at least 2 on each). "
+            "Try an image with sharper/larger axis labels."
         )
 
     x_px = np.array([t[0] for t in x_ticks])
@@ -661,7 +828,7 @@ def isolate_curve_mask(crop_bgr: np.ndarray, color: str) -> np.ndarray:
 
     n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_dilated, connectivity=8)
     if n_labels <= 1:
-        raise RuntimeError("Po izolacii nezostali ziadne pixely krivky - skontroluj obrazok.")
+        raise RuntimeError("No curve pixels remained after isolation - check the image.")
     largest_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
 
     return np.where(labels == largest_label, 255, 0).astype(np.uint8)
@@ -761,7 +928,7 @@ def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3,
     artefakt, nie legitimne mensie markery kdekolvek inde na krivke."""
     n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_points, connectivity=8)
     if n_labels <= 1:
-        raise RuntimeError("Po izolacii nezostali ziadne bodove markery - skontroluj obrazok.")
+        raise RuntimeError("No point markers remained after isolation - check the image.")
 
     h_img, w_img = mask_points.shape[:2]
     areas = stats[1:, cv2.CC_STAT_AREA]
@@ -784,8 +951,8 @@ def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3,
 
     if not valid:
         raise RuntimeError(
-            "Po filtrovani okrajovych artefaktov nezostal ziadny pouzitelny marker - "
-            "skontroluj kvalitu/rozlisenie obrazka."
+            "No usable marker remained after filtering border artifacts - "
+            "check the image quality/resolution."
         )
 
     pts = centroids[valid]  # (x, y) poradie z OpenCV
@@ -822,7 +989,7 @@ def digitize_mask_to_path(mask_curve: np.ndarray):
     ys, xs = np.where(skeleton)
     coords = set(zip(ys.tolist(), xs.tolist()))
     if len(coords) < 2:
-        raise RuntimeError("Skeleton krivky je prazdny/prilis maly.")
+        raise RuntimeError("Curve skeleton is empty/too small.")
 
     endpoints = [(y, x) for (y, x) in coords if len(_neighbors(coords, y, x)) == 1]
     if not endpoints:
