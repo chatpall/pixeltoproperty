@@ -128,6 +128,57 @@ def reset_downstream_state():
 
 
 # ============================================================================
+# UVITACIE/BETA OKNO - modalne, zobrazi sa raz pri prvom nacitani relacie
+# (st.session_state.welcome_dismissed=False), da sa kedykolvek znova otvorit
+# tlacidlom v bocnom paneli ("ℹ️ About & feedback"). Vysvetluje aplikaciu
+# populariznou formou + ziada o testovanie/spatnu vazbu cez ResearchGate.
+# POZNAMKA: vyzaduje Streamlit >= 1.31 (st.dialog) - requirements.txt necha
+# streamlit nepripnuty na verziu, takze Streamlit Cloud vzdy nainstaluje
+# najnovsiu dostupnu, kde st.dialog uz existuje.
+# ============================================================================
+if "welcome_dismissed" not in st.session_state:
+    st.session_state.welcome_dismissed = False
+
+
+@st.dialog("Welcome to PixelToProperty 👋")
+def show_welcome_dialog():
+    st.markdown(
+        "**Ever needed the exact numbers behind a stress–strain curve from a "
+        "paper, report, or old lab printout — but only had the picture?**\n\n"
+        "PixelToProperty reads the chart image, automatically finds the axes, "
+        "calibrates them (OCR does the reading for you), traces the curve "
+        "pixel by pixel, and turns it back into real (strain, stress) data "
+        "points.\n\n"
+        "From there it goes further: it computes the material's key "
+        "mechanical properties directly from the digitized curve — Young's "
+        "modulus (E), the 0.2% offset yield strength (Rp0.2), ultimate "
+        "tensile strength (Rm), elongation (A), and, if the data supports "
+        "it, the Hollomon strain-hardening exponent (n). You get the "
+        "numbers, a downloadable CSV of the raw points, and a diagnostic "
+        "view of how confident the fit is — no more measuring by eye with "
+        "a ruler and a squint."
+    )
+    st.markdown("---")
+    st.markdown(
+        "**🧪 This is a testing version.** Source charts vary wildly — "
+        "different fonts, colors, gridlines, resolutions — and the app "
+        "won't get everything right yet. I'd be genuinely grateful if you "
+        "tried it on your own curves and let me know what worked, what "
+        "didn't, and what surprised you.\n\n"
+        "**Share feedback:** via my ResearchGate profile → "
+        "[Peter Oslanec](https://www.researchgate.net/profile/Peter-Oslanec-2)"
+    )
+    st.write("")
+    if st.button("Got it, let's start", type="primary", use_container_width=True):
+        st.session_state.welcome_dismissed = True
+        st.rerun()
+
+
+if not st.session_state.welcome_dismissed:
+    show_welcome_dialog()
+
+
+# ============================================================================
 # BOCNY PANEL: logo, krokovnik, info boxy
 # ============================================================================
 def _step_status(step_index: int) -> str:
@@ -183,6 +234,9 @@ with st.sidebar:
         '<br>Streamlit Community Cloud</div>',
         unsafe_allow_html=True,
     )
+    if st.button("ℹ️ About & feedback", use_container_width=True):
+        st.session_state.welcome_dismissed = False
+        st.rerun()
 
 
 # ============================================================================
