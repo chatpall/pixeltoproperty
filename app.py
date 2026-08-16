@@ -379,14 +379,36 @@ with col_res1:
                 a, b = props.elastic_window
                 ax.plot(strain[a:b], stress[a:b], "-", linewidth=2.5, color="#2563EB",
                         label="elastické jadro (fit)")
+
+                # Ciarkovana referencna elasticka priamka (E) natiahnuta cez cely
+                # graf - vizualne ukazuje AKY presne sklon bol zvoleny pre linearnu
+                # (elasticku) cast, nie len usek pouzity na samotny fit.
+                x_max_plot = max(strain.max(), props.Rm_strain) * 1.05
+                x_ref = np.array([0.0, x_max_plot])
+                y_ref = props.elastic_slope * x_ref
+                ax.plot(x_ref, y_ref, "--", linewidth=1.3, color="#2563EB", alpha=0.55,
+                        label="referenčný sklon E (predĺžený)")
+
                 if props.Rp02_MPa is not None:
+                    # Ciarkovana OFFSET priamka (rovnobezna s E, posunuta o 0.2%
+                    # deformacie) - presne tá, ktorou sa dohovorená (zmluvná)
+                    # medza klzu Rp0.2 urcuje. Natiahnuta az po bod, kde pretina
+                    # krivku (Rp0.2), aby bolo jasne vidno geometricky princip.
+                    offset = 0.2 if props.strain_unit_percent else 0.002
+                    x_offset_end = props.Rp02_strain * 1.15
+                    x_offset_line = np.array([offset, x_offset_end])
+                    y_offset_line = props.elastic_slope * (x_offset_line - offset)
+                    ax.plot(x_offset_line, y_offset_line, "--", linewidth=1.5, color="#7C3AED",
+                            alpha=0.7, label="0,2 % offset (zmluvná medza klzu)")
                     ax.plot(props.Rp02_strain, props.Rp02_MPa, "s", color="#7C3AED",
                             markersize=8, label="Rp0.2")
                 ax.plot(props.Rm_strain, props.Rm_MPa, "o", color="#1E293B",
                         markersize=8, label="Rm")
+                ax.set_xlim(0, x_max_plot)
+                ax.set_ylim(0, max(stress.max(), props.Rm_MPa) * 1.1)
                 ax.set_xlabel("strain (%)" if props.strain_unit_percent else "strain")
                 ax.set_ylabel("stress (MPa)")
-                ax.legend(fontsize=8, loc="lower right")
+                ax.legend(fontsize=7.5, loc="lower right")
                 ax.grid(alpha=0.25)
                 st.pyplot(fig, use_container_width=True)
 

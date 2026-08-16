@@ -76,6 +76,55 @@ class Frame:
     x_right_source: str = "unknown"   # "detected_line" | "width_fallback" - diagnostika/metadata
 
 
+def _trim_irregular_cluster_edges(values: list, tight_merge: int = 8,
+                                   irregularity_factor: float = 1.3) -> list:
+    """Orezava OKRAJE (zaciatok/koniec) zhluku hodnot, ktore nesedia do
+    PRAVIDELNEHO rozostupu zvysku zhluku - realny pripad, ked genuinna
+    mriezka grafu (rovnomerne rozlozene tick ciary) omylom "zdedila" navyse
+    jednu susednu ciaru z ineho prvku obrazka (napr. ohranicenie ozdobneho
+    ramceka pod grafom), ktora je stale v ramci hrubeho zlucovacieho prahu
+    (60px), ale porusuje pravidelny vzor.
+
+    Postup: najprv zoskup hodnoty na TESNE podskupiny (tight_merge, default
+    8px - zachytava anti-aliasing duplicity tej istej fyzickej ciary) a
+    zoberme jedneho reprezentanta z kazdej. Spocitaj medzery medzi
+    susednymi reprezentantmi, najdi medianovu medzeru. Kym je medzera na
+    KTOROMKOLVEK kraji (zaciatok alebo koniec) vyrazne (>irregularity_factor)
+    vacsia nez median, orezaj ten krajny bod a opakuj."""
+    uniq = sorted(set(values))
+    if len(uniq) < 4:
+        return values  # prilis malo bodov na zmysluplnu analyzu vzoru
+
+    tight = [[uniq[0]]]
+    for v in uniq[1:]:
+        if v - tight[-1][-1] <= tight_merge:
+            tight[-1].append(v)
+        else:
+            tight.append([v])
+    reps = [int(np.mean(g)) for g in tight]
+
+    if len(reps) < 4:
+        return values
+
+    changed = True
+    while changed and len(reps) >= 4:
+        changed = False
+        gaps = [reps[i + 1] - reps[i] for i in range(len(reps) - 1)]
+        median_gap = float(np.median(gaps))
+        if median_gap <= 0:
+            break
+        if gaps[-1] > irregularity_factor * median_gap:
+            reps = reps[:-1]
+            changed = True
+        elif gaps[0] > irregularity_factor * median_gap:
+            reps = reps[1:]
+            changed = True
+
+    lo, hi = reps[0], reps[-1]
+    margin = tight_merge
+    return [v for v in values if lo - margin <= v <= hi + margin]
+
+
 def detect_frame(gray: np.ndarray) -> Frame:
     """Najde hranice grafovej plochy pomocou Houghovej transformacie na dlhe rovne
     ciary (predpoklad: osi/ram su najdlhsie rovne ciary v obrazku).
@@ -124,23 +173,46 @@ def detect_frame(gray: np.ndarray) -> Frame:
                     cur_h.append((y1 + y2) // 2)
                 elif abs(x1 - x2) < 5:
                     cur_v.append((x1 + x2) // 2)
-        # DOLEZITA OPRAVA (realny nalez): povodne sa h_lines aj v_lines PREPISOVALI
-        # pri kazdej iteracii, aj ked uz h_lines boli v poriadku pri prisnejsom
-        # (strict = spolahlivejsom) prahu - loop pokracoval len kvoli chybajucim
-        # v_lines a nechtiac tym POKAZIL uz funkcne h_lines (na jednom obrazku
-        # bez ram-ovej ohranicky Houghovo v_lines nikdy nenaslo 2 ciary pri
-        # ziadnom prahu, takze sa doslo az k najvolnejsiemu prahu 0.1, kde uz
-        # h_lines zachytilo aj maly text POD grafom ako 'ciaru', posunulo to
-        # y_bottom o desiatky pixelov). Opravene: h_lines/v_lines sa 'zamknu'
-        # hned ako sa raz najdu (na najprísnejsom moznom prahu), dalsie
-        # uvolnovanie prahu uz do nich nezasahuje.
-        if not h_lines and cur_h:
-            h_lines = cur_h
-        if not v_lines and cur_v:
-            v_lines = cur_v
-        if h_lines and v_lines:
-            break
+        # DOLEZITA OPRAVA (dva realne nalezy vyriesene JEDNYM parametrom,
+        # ALE ASYMETRICKY): Canny/Hough vedia najst 'ciaru' PRESNE na okraji
+        # obrazka (artefakt), aj TESNE PRI okraji (textovy/kompresny artefakt
+        # o par pixelov dalej) - VZDY NA LAVEJ strane (kde su popisky osi Y,
+        # teda viac priestoru pre "sum" medzi skutocnym ramom a krajom
+        # obrazka). Vacsia ochranna zona (30px) preto plati LEN PRE LAVY
+        # okraj. PRAVY okraj grafu (a horny/dolny) VIE BYT legitimne velmi
+        # blizko kraja obrazka (realny pripad: 21px) - tam vacsia zona
+        # naopak SKODI (odfiltrovala by spravnu hodnotu). Asymetria teda nie
+        # je nahoda, ale odraz asymetrie realnych grafov (viac 'sumu' vlavo).
+        edge_tol_h = 2
+        edge_tol_v_left = 30
+        edge_tol_v_right = 2
+        cur_h = [v for v in cur_h if edge_tol_h <= v <= h - 1 - edge_tol_h]
+        cur_v = [v for v in cur_v if edge_tol_v_left <= v <= w - 1 - edge_tol_v_right]
+        h_lines.extend(cur_h)
+        v_lines.extend(cur_v)
 
+    # DOLEZITA OPRAVA (dalsi realny nalez): rovnaka genuinna ciara sa vie
+    # najst OPAKOVANE naprieč viacerymi prahmi (raz na kazdej iteracii) -
+    # 'extend' bez deduplikacie potom umelo nafukne DLZKU zoznamu (napr. 4×
+    # ta ista hodnota), aj ked je DISTINCT hodnota len jedna. Nasledujuci
+    # kontrolny test 'len(v_lines) < 2' (fallback na stlpcovy profil) by tak
+    # nespravne vyhodnotil 'mam dost ciar' aj ked v skutocnosti islo o jedinu
+    # (opakovanu) hodnotu. Deduplikujeme preto HNED, pred akymkolvek dalsim
+    # spracovanim.
+    h_lines = sorted(set(h_lines))
+    v_lines = sorted(set(v_lines))
+
+    # DOLEZITA OPRAVA (dva protichodne realne nalezy vyriesene naraz):
+    # (1) Pri 'zamkni prvy uspesny prah' hrozilo, ze sa zamkne NEUPLNA
+    #     mnozina ciar (skutocny okraj sa najde az pri volnejsom prahu, ale
+    #     uz sa tam nedostaneme, kedze prisnejsi prah uz 'uspel' s inou,
+    #     neuplnou mnozinou).
+    # (2) Pri 'ber vsetko zo vsetkych prahov' hrozilo, ze sa do zberu dostane
+    #     aj sum (napr. maly text pod grafom pri najvolnejsom prahu).
+    # Riesenie: ZBIERAME ZJEDNOTENIE cez VSETKY prahy (rieši (1)), a NASLEDNE
+    # aplikujeme ZHLUKOVANIE - najvacsi hosty zhluk blizkych ciar je genuinny
+    # ram/mriezka, osamele ciary (sum) sa prirodzene neuplatnia (riesi (2)).
+    # Toto zhlukovanie uz existovalo pre h_lines, teraz rovnako aj pre v_lines.
     if not h_lines:
         raise RuntimeError(
             "Nepodarilo sa detegovat ram grafu (osi). Skus iny obrazok "
@@ -162,6 +234,30 @@ def detect_frame(gray: np.ndarray) -> Frame:
             clusters.append([v])
     largest_cluster = max(clusters, key=len)
     h_lines = largest_cluster
+
+    # DALSI REALNY NALEZ: aj NAJVACSI zhluk h_lines vie obsahovat jednu
+    # (alebo viac) OSAMELYCH hodnot na svojom OKRAJI, ktore su este v ramci
+    # 60px zlucovacieho prahu, ale FYZIKALNE patria k inemu prvku grafu (napr.
+    # horna hranica ozdobneho ramceka okolo nazvu osi, umiestnena tesne pod
+    # poslednou skutocnou mriezkovou ciarou). Genuinne mriezkove ciary maju
+    # PRAVIDELNY rozostup (zodpovedaju rovnomerne rozlozenym tick hodnotam) -
+    # napr. 20,51,82,114,145,177,208,240,271 (rozostup ~31px kazda), zatial co
+    # pridana ciara 311 vybocuje (rozostup 40px, o ~30% viac nez typicky).
+    # Orezeme preto z KRAJOV zhluku hodnoty, ktorych medzera k susedovi vyrazne
+    # (>1.6x) prekracuje medianovy rozostup vnutri zhluku - to zachyti presne
+    # tento pripad bez toho, aby to ovplyvnilo bezne huste mriezky (tam su
+    # vsetky medzery male a rovnomerne, ziadne orezanie sa neuplatni).
+    h_lines = _trim_irregular_cluster_edges(h_lines)
+
+    # POZOR (realny nalez): na rozdiel od h_lines (kde je genuinna mriezka
+    # VZDY hustym zhlukom desiatok blizkych ciar oproti osamelemu sumu),
+    # v_lines mozu byt LEGITIMNE RIEDKE (len nekolko hlavnych vertikalnych
+    # gridlines, kazda vzdialena >60px od susednej) - v takom pripade by
+    # 'najvacsi zhluk' vybral LEN JEDEN tick (nahodne, kedze vsetky zhluky
+    # maju rovnaku velkost 2), a zahodil by VSETKY ostatne vratane
+    # skutocneho praveho okraja. Preto sa PRE v_lines zhlukovanie NEAPLIKUJE -
+    # ponechava sa cely zjednoteny zoznam, z ktoreho x_right logika nizsie
+    # (distinct_v, s tesnejsim 3px prahom) uz sama spravne vyberie.
 
     if len(v_lines) < 2:
         # FALLBACK: HoughLinesP niekedy nevie poskladat vertikalne ciary do
@@ -370,8 +466,27 @@ def _find_first_text_band(strip_gray: np.ndarray, axis="rows", max_search: int =
         profile = np.mean(strip_gray < ink_threshold, axis=0)
 
     if min_ink_fraction is None:
-        max_profile = float(np.max(profile)) if len(profile) else 0.0
-        min_ink_fraction = max(0.01, relative_frac * max_profile) if max_profile > 0 else 0.01
+        # DOLEZITA OPRAVA (realny nalez): povodne sa prah pocital relativne k
+        # ABSOLUTNEMU maximu profilu v celej hladanej oblasti. Ak sa v tejto
+        # oblasti nachadza aj nesuvisiaci VELMI HUSTY prvok (napr. ohranicujuca
+        # ciara okolo nazvu osi, takmer 100% tmavych pixelov na riadok), tento
+        # jediny riadok nafuka prah tak, ze GENUINNE, ale jemnejsie popisky
+        # (napr. male cisla na kompaktnom grafe, ~15-18% hustoty) preprapadnu
+        # pod prah a algoritmus namiesto nich najde az tuto vzdialenu husty
+        # ciaru. 90. percentil je odolny voci jednemu-dvom takym odlahlym
+        # riadkom (na rozdiel od absolutneho maxima), pricom sa stale
+        # prisposobi typickej hustote textu v danej oblasti.
+        max_profile = float(np.percentile(profile, 90)) if len(profile) else 0.0
+        # DOLEZITA OPRAVA (dalsi realny nalez, ten isty obrazok): aj po oprave
+        # 90. percentilom vysiel prah PRILIS NIZKY (2.2%) na kompaktnom grafe
+        # so slabym kontrastom - nizsie nez slaby anti-aliasing sum TESNE PRI
+        # OSI (2.7%), ale nizsie nez skutocny text (5-17%). Absolutna podlaha
+        # 0.01 (1%) bola prilis nizka na odfiltrovanie tohto sumu. Zvysena na
+        # 0.03 (3%) - stale nizko dost na to, aby nevylucila skutocne jemne
+        # popisky nikde inde (tie maju vzdy >5% hustotu vo vsetkych doteraz
+        # testovanych obrazkoch), ale uz vylucuje typicky anti-aliasing sum
+        # tesne pri osiach (ten je typicky <3%).
+        min_ink_fraction = max(0.03, relative_frac * max_profile) if max_profile > 0 else 0.03
 
     n = len(profile)
     if max_search is not None:

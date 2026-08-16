@@ -97,15 +97,21 @@ class HollomonFit:
 
 
 def compute_hollomon_fit(true_curve: TrueCurve, elastic_slope: float, epsilon0: float,
-                          rp02_index: int, is_percent: bool) -> HollomonFit:
-    """Fit Hollomonovej rovnice sigma = K * eps_p^n na oblast ROVNOMERNEJ plastickej
-    deformacie - od Rp0.2 po Rm (presne oblast, kde je tento zakon fyzikalne
-    zmysluplny; pred Rp0.2 je este vyrazna elasticka zlozka, po Rm uz nie je
-    v true_curve ziadne data, kedze boli orezane pri konverzii).
+                          is_percent: bool, eps_plastic_min_fraction: float = 0.03,
+                          eps_plastic_max_fraction: float = 0.13) -> HollomonFit:
+    """Fit Hollomonovej rovnice sigma = K * eps_p^n na ROZUMNY rozsah plastickej
+    deformacie (predvolene 3%-13%, t.j. 3% + 10 percentualnych bodov navyse) -
+    NIE od Rp0.2 (0.2%) az po Rm, ako to bolo predtym.
 
-    Postup: log-log linearna regresia
-        ln(sigma_true) = ln(K) + n * ln(eps_true_plastic)
-    n = smernica, K = exp(usek).
+    DOLEZITY DOVOD ZMENY (ziadost pouzivatela projektu, materialovo-inziniersky
+    standard): hned po prekroceni medze klzu (0.2%-3% plastickej deformacie) je
+    krivka este v prechodovej oblasti - mocninovy zakon tam nie je este ustaleny,
+    fit by bol skresleny touto prechodovou casovou. Naopak, TESNE PRED Rm zacina
+    byt krivka ovplyvnena blizkym nastupom lokalizacie (krckovania) - aj tam je
+    fit menej spolahlivy. Rozumny, materialovo zmysluplny odhad n preto pochadza
+    z OBLASTI MEDZI TYMITO DVOMA EXTREMAMI - typicky niekolko percent po medzi
+    klzu, dalsich cca 10 percentualnych bodov (t.j. 3%-13% alebo 5%-15% plastickej
+    deformacie, podla konkretneho materialu).
 
     elastic_slope, epsilon0: z modulu 2 (EngineeringProperties.elastic_slope/epsilon0)
     - pouzite na odhad elastickej zlozky true strain (priblizne, pre male elasticke
@@ -113,14 +119,22 @@ def compute_hollomon_fit(true_curve: TrueCurve, elastic_slope: float, epsilon0: 
     """
     true_strain = true_curve.true_strain
     true_stress = true_curve.true_stress
-    return _hollomon_fit_core(true_strain, true_stress, elastic_slope, epsilon0, rp02_index)
+    return _hollomon_fit_core(true_strain, true_stress, elastic_slope, epsilon0, is_percent,
+                               eps_plastic_min_fraction, eps_plastic_max_fraction)
 
 
 def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: float,
-                        epsilon0: float, rp02_index: int) -> HollomonFit:
+                        epsilon0: float, is_percent: bool,
+                        eps_plastic_min_fraction: float = 0.03,
+                        eps_plastic_max_fraction: float = 0.13) -> HollomonFit:
     """Spolocne jadro Hollomon fitu, pouzitelne na LUBOVOLNE (strain,stress) pole -
     bud uz skutocne true (z convert_engineering_to_true), alebo SUROVE nekonvertovane
     data (pouzivane v _classify_curve_form na otestovanie hypotezy 'vstup uz je true').
+
+    Fituje sa LEN v rozsahu plastickej deformacie [eps_plastic_min_fraction,
+    eps_plastic_max_fraction] (fyzikalne zlomky, napr. 0.03=3%) - viz docstring
+    compute_hollomon_fit vyssie pre odovodnenie. Hranice sa PREVEDU na jednotky
+    pola strain (percenta, ak is_percent=True).
 
     DOLEZITA OPRAVA (realny nalez z nasadenia): predtym RAISE-ovalo RuntimeError
     pri nedostatku bodov (napr. krehky material s malym poctom bodov medzi Rp0.2
@@ -131,23 +145,28 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
     eps_elastic = stress / elastic_slope
     eps_plastic = strain - epsilon0 - eps_elastic
 
-    lo = min(rp02_index, len(strain) - 1)
-    seg_eps = eps_plastic[lo:]
-    seg_sigma = stress[lo:]
+    unit_scale = 100.0 if is_percent else 1.0
+    lo_bound = eps_plastic_min_fraction * unit_scale
+    hi_bound = eps_plastic_max_fraction * unit_scale
 
-    mask = seg_eps > 1e-9
+    mask = (eps_plastic >= lo_bound) & (eps_plastic <= hi_bound)
     if mask.sum() < 5:
         return HollomonFit(
             K_MPa=float("nan"), n=float("nan"), r2=float("nan"),
             n_points=int(mask.sum()), strain_range=(float("nan"), float("nan")),
             applicable=False,
-            message=f"Nedostatok bodov ({int(mask.sum())}) s kladnym plastickym strain "
-                    f"medzi Rp0.2 a Rm pre Hollomonov fit (potrebnych aspon 5) - "
-                    f"pravdepodobne krehky material bez vyraznej plastickej oblasti.",
+            message=f"Nedostatok bodov ({int(mask.sum())}) v rozumnom rozsahu plastickej "
+                    f"deformacie ({eps_plastic_min_fraction*100:.0f}%-{eps_plastic_max_fraction*100:.0f}%) "
+                    f"pre Hollomonov fit (potrebnych aspon 5) - material pravdepodobne nema "
+                    f"dost plastickej deformacie v tomto rozsahu (napr. krehky material, "
+                    f"alebo nizka celkova taznost).",
         )
 
-    log_eps = np.log(seg_eps[mask])
-    log_sigma = np.log(seg_sigma[mask])
+    seg_eps = eps_plastic[mask]
+    seg_sigma = stress[mask]
+
+    log_eps = np.log(seg_eps)
+    log_sigma = np.log(seg_sigma)
     res = linregress(log_eps, log_sigma)
 
     n = res.slope
@@ -156,7 +175,7 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
 
     return HollomonFit(
         K_MPa=K, n=n, r2=r2, n_points=int(mask.sum()),
-        strain_range=(float(seg_eps[mask].min()), float(seg_eps[mask].max())),
+        strain_range=(float(seg_eps.min()), float(seg_eps.max())),
     )
 
 
@@ -207,10 +226,10 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     sa poctivo oznaci ako 'neurcite' (nedostatok dokazov), NIE ako chyba."""
     fit_engineering = compute_hollomon_fit(
         convert_engineering_to_true(strain, stress, is_percent, rm_index),
-        elastic_slope, epsilon0, rp02_index, is_percent,
+        elastic_slope, epsilon0, is_percent,
     )
     fit_true = _hollomon_fit_core(
-        strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
+        strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, is_percent,
     )
     r2_as_engineering = fit_engineering.r2 if fit_engineering.applicable else None
     r2_as_true = fit_true.r2 if fit_true.applicable else None
@@ -282,7 +301,7 @@ def compute_true_curve_and_hollomon(strain: np.ndarray, stress: np.ndarray,
 
     if effective_form == "true":
         hollomon = _hollomon_fit_core(
-            strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, rp02_index,
+            strain[:rm_index + 1], stress[:rm_index + 1], elastic_slope, epsilon0, is_percent,
         )
         # vstup uz je true - NEKONVERTUJEME znova, vratime priamo surove (orezane) data
         true_curve = TrueCurve(
@@ -290,7 +309,7 @@ def compute_true_curve_and_hollomon(strain: np.ndarray, stress: np.ndarray,
             valid_up_to_index=rm_index,
         )
     else:
-        hollomon = compute_hollomon_fit(converted_curve, elastic_slope, epsilon0, rp02_index, is_percent)
+        hollomon = compute_hollomon_fit(converted_curve, elastic_slope, epsilon0, is_percent)
         true_curve = converted_curve
 
     return TrueCurveResult(
