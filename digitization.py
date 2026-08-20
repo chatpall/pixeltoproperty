@@ -215,8 +215,8 @@ def detect_frame(gray: np.ndarray) -> Frame:
     # Toto zhlukovanie uz existovalo pre h_lines, teraz rovnako aj pre v_lines.
     if not h_lines:
         raise RuntimeError(
-            "Nepodarilo sa detegovat ram grafu (osi). Skus iny obrazok "
-            "s vyraznejsimi/kontrastnejsimi osami."
+            "Could not detect the chart frame (axes). Try a different image "
+            "with more distinct/higher-contrast axes."
         )
 
     # h_lines moze obsahovat aj OSAMELE ciary MIMO samotneho grafu (napr. deliaca
@@ -282,9 +282,10 @@ def detect_frame(gray: np.ndarray) -> Frame:
         candidate_cols = np.where(col_density > 0.85 * row_count)[0]
         if len(candidate_cols) == 0:
             raise RuntimeError(
-                "Nepodarilo sa detegovat vertikalne hranice ramu grafu (osi) - "
-                "ani Houghovou transformaciou, ani stlpcovym profilom hustoty hran. "
-                "Skus iny obrazok s vyraznejsimi/kontrastnejsimi osami."
+                "Could not detect the vertical frame boundaries (axes) - "
+                "neither via Hough transform nor via the column edge-density "
+                "profile. Try a different image with more distinct/higher-"
+                "contrast axes."
             )
         # zoskupime bilzke stlpce (do 3px) do jednej hranice
         v_lines = []
@@ -408,7 +409,7 @@ def _robust_linear_fit(px, val, n_iters=500, threshold_frac=0.02, seed=0):
     val = np.asarray(val, dtype=float)
     n = len(px)
     if n < 2:
-        raise RuntimeError("Potrebne aspon 2 body pre linearny fit.")
+        raise RuntimeError("At least 2 points are required for a linear fit.")
     if n == 2:
         slope = (val[1] - val[0]) / (px[1] - px[0])
         intercept = val[0] - slope * px[0]
@@ -593,9 +594,9 @@ def calibrate_axes(gray: np.ndarray, frame: Frame) -> AxisCalibration:
 
     if len(x_ticks) < 2 or len(y_ticks) < 2:
         raise RuntimeError(
-            f"OCR naslo len {len(x_ticks)} citatelnych cisel na osi X a "
-            f"{len(y_ticks)} na osi Y (potrebne aspon 2 na kazdej). "
-            "Skus obrazok s ostrejsimi/vacsimi popiskami."
+            f"OCR found only {len(x_ticks)} readable numbers on the X axis "
+            f"and {len(y_ticks)} on the Y axis (at least 2 on each are "
+            "required). Try an image with sharper/larger axis labels."
         )
 
     x_px = np.array([t[0] for t in x_ticks])
@@ -673,7 +674,7 @@ def isolate_curve_mask(crop_bgr: np.ndarray, color: str) -> np.ndarray:
 
     n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_dilated, connectivity=8)
     if n_labels <= 1:
-        raise RuntimeError("Po izolacii nezostali ziadne pixely krivky - skontroluj obrazok.")
+        raise RuntimeError("No curve pixels remained after isolation - check the image.")
     largest_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
 
     return np.where(labels == largest_label, 255, 0).astype(np.uint8)
@@ -773,7 +774,7 @@ def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3,
     artefakt, nie legitimne mensie markery kdekolvek inde na krivke."""
     n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_points, connectivity=8)
     if n_labels <= 1:
-        raise RuntimeError("Po izolacii nezostali ziadne bodove markery - skontroluj obrazok.")
+        raise RuntimeError("No point markers remained after isolation - check the image.")
 
     h_img, w_img = mask_points.shape[:2]
     areas = stats[1:, cv2.CC_STAT_AREA]
@@ -796,8 +797,8 @@ def extract_point_centroids(mask_points: np.ndarray, min_marker_area: int = 3,
 
     if not valid:
         raise RuntimeError(
-            "Po filtrovani okrajovych artefaktov nezostal ziadny pouzitelny marker - "
-            "skontroluj kvalitu/rozlisenie obrazka."
+            "No usable marker remained after filtering edge artifacts - "
+            "check the image quality/resolution."
         )
 
     pts = centroids[valid]  # (x, y) poradie z OpenCV
@@ -834,7 +835,7 @@ def digitize_mask_to_path(mask_curve: np.ndarray):
     ys, xs = np.where(skeleton)
     coords = set(zip(ys.tolist(), xs.tolist()))
     if len(coords) < 2:
-        raise RuntimeError("Skeleton krivky je prazdny/prilis maly.")
+        raise RuntimeError("The curve skeleton is empty/too small.")
 
     endpoints = [(y, x) for (y, x) in coords if len(_neighbors(coords, y, x)) == 1]
     if not endpoints:

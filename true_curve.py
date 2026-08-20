@@ -56,8 +56,9 @@ def convert_engineering_to_true(strain: np.ndarray, stress: np.ndarray,
     """
     if rm_index < 1:
         raise RuntimeError(
-            "Rm index je prilis nizko (menej nez 1 bod pred medzou pevnosti) - "
-            "nie je z coho urobit zmysluplnu true krivku."
+            "Rm index is too low (fewer than 1 point before the ultimate "
+            "tensile strength) - there is nothing to build a meaningful "
+            "true curve from."
         )
 
     e = strain[:rm_index + 1]
@@ -66,8 +67,8 @@ def convert_engineering_to_true(strain: np.ndarray, stress: np.ndarray,
 
     if np.any(e_fraction <= -1.0):
         raise RuntimeError(
-            "Inzinierska deformacia <= -100% v datach - fyzikalne nezmyselne, "
-            "skontroluj kalibraciu osi alebo digitalizaciu."
+            "Engineering strain <= -100% found in the data - physically "
+            "meaningless, check the axis calibration or digitization."
         )
 
     true_strain_fraction = np.log1p(e_fraction)     # ln(1+e), numericky stabilnejsie
@@ -155,11 +156,11 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
             K_MPa=float("nan"), n=float("nan"), r2=float("nan"),
             n_points=int(mask.sum()), strain_range=(float("nan"), float("nan")),
             applicable=False,
-            message=f"Nedostatok bodov ({int(mask.sum())}) v rozumnom rozsahu plastickej "
-                    f"deformacie ({eps_plastic_min_fraction*100:.0f}%-{eps_plastic_max_fraction*100:.0f}%) "
-                    f"pre Hollomonov fit (potrebnych aspon 5) - material pravdepodobne nema "
-                    f"dost plastickej deformacie v tomto rozsahu (napr. krehky material, "
-                    f"alebo nizka celkova taznost).",
+            message=f"Not enough points ({int(mask.sum())}) in the reasonable plastic strain "
+                    f"range ({eps_plastic_min_fraction*100:.0f}%-{eps_plastic_max_fraction*100:.0f}%) "
+                    f"for the Hollomon fit (at least 5 needed) - the material likely does not "
+                    f"have enough plastic strain in this range (e.g. brittle material, "
+                    f"or low overall ductility).",
         )
 
     seg_eps = eps_plastic[mask]
@@ -236,7 +237,7 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
 
     if r2_as_engineering is None or r2_as_true is None:
         return FormClassification(
-            form_guess="neurcite", r2_as_engineering=r2_as_engineering,
+            form_guess="undetermined", r2_as_engineering=r2_as_engineering,
             r2_as_true=r2_as_true, margin=None,
         )
 
@@ -246,7 +247,7 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     elif margin < -margin_threshold:
         form_guess = "engineering"
     else:
-        form_guess = "neurcite"
+        form_guess = "undetermined"
 
     return FormClassification(
         form_guess=form_guess, r2_as_engineering=r2_as_engineering,

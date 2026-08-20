@@ -153,7 +153,7 @@ def find_elastic_region(
             stress_span_MPa=0.0, stress_span_fraction=0.0, reach95_ratio=float("nan"),
             sm_rel_percent=float("nan"), E_free_intercept_MPa=float("nan"),
             intercept_MPa=float("nan"), confidence="LOW",
-            messages=[f"Krivka ma len {n} bodov celkovo - nedostatocne data."],
+            messages=[f"The curve has only {n} points in total - insufficient data."],
         )
 
     Rm_guess = float(np.max(t))
@@ -209,8 +209,8 @@ def find_elastic_region(
     messages, flags = [], 0
     if n_window < low_n_threshold:
         flags += 2
-        messages.append(f"Elasticke okno obsahuje len {n_window} bodov (< {low_n_threshold}) - "
-                         f"pravdepodobne fundamentalny limit dat.")
+        messages.append(f"The elastic window contains only {n_window} points (< {low_n_threshold}) - "
+                         f"likely a fundamental limit of the source data.")
     n_distinct_strain = int(len(np.unique(ws)))
     if n_distinct_strain < 5:
         # DOLEZITY REALNY NALEZ: na kompaktnom (nizko rozlisenom) zdrojovom
@@ -224,25 +224,25 @@ def find_elastic_region(
         # velky, napr. 100 bodov, aj ked vsetky zdielaju 1 hodnotu strain) -
         # preto samostatna, silna kontrola priamo na DISTINCT hodnoty strain.
         flags += 2
-        messages.append(f"Elasticke okno obsahuje len {n_distinct_strain} odlisnych hodnot "
-                         f"strain (z {n_window} bodov) - elasticka oblast sa pravdepodobne "
-                         f"zmestila do jedineho pixeloveho stlpca zdrojoveho obrazka. "
-                         f"E NIE JE spolahliva regresia, len priblizny odhad.")
+        messages.append(f"The elastic window contains only {n_distinct_strain} distinct strain "
+                         f"values (out of {n_window} points) - the elastic region likely "
+                         f"collapsed into a single pixel column of the source image. "
+                         f"E is NOT a reliable regression, only a rough estimate.")
     if stress_span_fraction < narrow_span_threshold:
         flags += 2
-        messages.append(f"Okno pokryva len {stress_span_fraction*100:.1f}% rozsahu napatia - "
-                         f"prilis uzky signal.")
+        messages.append(f"The window covers only {stress_span_fraction*100:.1f}% of the stress "
+                         f"range - signal too narrow.")
     if reach95_ratio > no_plateau_threshold:
         flags += 1
-        messages.append(f"E_hat(k) nema skore plato (reach95_ratio={reach95_ratio:.2f}) - "
-                         f"podozrenie na toe efekt/nedostatocne rozlisenie.")
+        messages.append(f"E_hat(k) shows no clear plateau (reach95_ratio={reach95_ratio:.2f}) - "
+                         f"possible toe effect/insufficient resolution.")
     if E_MPa and abs(E_free_intercept - E_MPa) / E_MPa > 0.10:
-        messages.append(f"Krizova kontrola (volny usek, {E_free_intercept:.0f} MPa) sa lisi o "
-                         f"{abs(E_free_intercept-E_MPa)/E_MPa*100:.1f}% (informativne).")
+        messages.append(f"Cross-check (free intercept, {E_free_intercept:.0f} MPa) differs by "
+                         f"{abs(E_free_intercept-E_MPa)/E_MPa*100:.1f}% (informational).")
 
     confidence = "LOW" if flags >= 2 else ("MEDIUM" if flags == 1 else "HIGH")
     if not messages:
-        messages.append("Bez vyhrad.")
+        messages.append("No reservations.")
 
     return ElasticFitResult(
         E_MPa=E_MPa, k_end=k_end, n_window=n_window,
@@ -388,8 +388,8 @@ def analyze_plastic_hardening(
             n_hardening=float("nan"), K_MPa=float("nan"), r2=float("nan"),
             idx_start=-1, idx_end=-1, strain_start_percent=float("nan"),
             strain_end_percent=float("nan"), n_points=len(idxs), applicable=False,
-            message=f"Nedostatok bodov ({len(idxs)}) s plastickou deformaciou > "
-                    f"{eps_plastic_min_fraction*100:.2f}% - pravdepodobne krehky material.",
+            message=f"Not enough points ({len(idxs)}) with plastic strain > "
+                    f"{eps_plastic_min_fraction*100:.2f}% - likely a brittle material.",
         )
 
     x = np.log(eps_p[idxs])
@@ -407,7 +407,7 @@ def analyze_plastic_hardening(
         idx_start=int(idxs[0]), idx_end=int(idxs[-1]),
         strain_start_percent=float(s[idxs[0]]), strain_end_percent=float(s[idxs[-1]]),
         n_points=len(idxs), applicable=True,
-        message="OK - Hollomonov fit na ustalenej oblasti spevnovania.",
+        message="OK - Hollomon fit on the stabilized hardening region.",
     )
 
 
@@ -451,8 +451,8 @@ def compute_rp02(strain_percent: np.ndarray, stress_MPa: np.ndarray, E_MPa: floa
             t_cross = t[i] + frac * (t[i + 1] - t[i])
             return Rp02Result(float(s_cross), float(t_cross), i, True, "OK.")
     return Rp02Result(float("nan"), float("nan"), -1, False,
-                       "Priesecnik nenajdeny - krivka nikdy neklesla pod offset priamku "
-                       "(typicky krehky material, ktory sa zlomi skor; zodpoveda Rp0.2=N/F).")
+                       "No intersection found - the curve never dropped below the offset line "
+                       "(typically a brittle material that fractures earlier; corresponds to Rp0.2=N/F).")
 
 
 @dataclass
