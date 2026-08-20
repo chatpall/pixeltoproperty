@@ -1,0 +1,21 @@
+# ============================================================================
+# PixelToProperty — docker-compose.yml
+#
+# Lokálne spustenie:  docker compose up -d --build
+# Zastavenie:         docker compose down
+# Logy:               docker compose logs -f
+#
+# Appka bude po spustení dostupná na http://localhost:8501
+# ============================================================================
+
+services:
+  pixeltoproperty:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pixeltoproperty
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    # Appka nič neukladá natrvalo (viď poznámka v app.py), takže tu
+    # zámerne nie je žiadny volume na perzistenciu dát.

@@ -56,8 +56,8 @@ def convert_engineering_to_true(strain: np.ndarray, stress: np.ndarray,
     """
     if rm_index < 1:
         raise RuntimeError(
-            "Rm index is too low (fewer than 1 point before the ultimate tensile "
-            "strength) - not enough data to build a meaningful true curve."
+            "Rm index je prilis nizko (menej nez 1 bod pred medzou pevnosti) - "
+            "nie je z coho urobit zmysluplnu true krivku."
         )
 
     e = strain[:rm_index + 1]
@@ -66,8 +66,8 @@ def convert_engineering_to_true(strain: np.ndarray, stress: np.ndarray,
 
     if np.any(e_fraction <= -1.0):
         raise RuntimeError(
-            "Engineering strain <= -100% found in the data - physically "
-            "meaningless, check the axis calibration or digitization."
+            "Inzinierska deformacia <= -100% v datach - fyzikalne nezmyselne, "
+            "skontroluj kalibraciu osi alebo digitalizaciu."
         )
 
     true_strain_fraction = np.log1p(e_fraction)     # ln(1+e), numericky stabilnejsie
@@ -155,11 +155,11 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
             K_MPa=float("nan"), n=float("nan"), r2=float("nan"),
             n_points=int(mask.sum()), strain_range=(float("nan"), float("nan")),
             applicable=False,
-            message=f"Not enough points ({int(mask.sum())}) in the reasonable plastic strain "
-                    f"range ({eps_plastic_min_fraction*100:.0f}%-{eps_plastic_max_fraction*100:.0f}%) "
-                    f"for the Hollomon fit (need at least 5) - the material likely doesn't have "
-                    f"enough plastic strain in this range (e.g. a brittle material, "
-                    f"or low overall elongation).",
+            message=f"Nedostatok bodov ({int(mask.sum())}) v rozumnom rozsahu plastickej "
+                    f"deformacie ({eps_plastic_min_fraction*100:.0f}%-{eps_plastic_max_fraction*100:.0f}%) "
+                    f"pre Hollomonov fit (potrebnych aspon 5) - material pravdepodobne nema "
+                    f"dost plastickej deformacie v tomto rozsahu (napr. krehky material, "
+                    f"alebo nizka celkova taznost).",
         )
 
     seg_eps = eps_plastic[mask]
@@ -185,7 +185,7 @@ def _hollomon_fit_core(strain: np.ndarray, stress: np.ndarray, elastic_slope: fl
 
 @dataclass
 class FormClassification:
-    form_guess: str          # "engineering" | "true" | "undetermined"
+    form_guess: str          # "engineering" | "true" | "neurcite"
     r2_as_engineering: float  # R2 Hollomon fitu PO konverzii (hypoteza: vstup je eng.)
     r2_as_true: float         # R2 Hollomon fitu BEZ konverzie (hypoteza: vstup uz je true)
     margin: float             # r2_as_true - r2_as_engineering
@@ -217,13 +217,13 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     suboru oznaceny ako 'true stress-strain', test spravne vratil 'true' s
     jasnym rozdielom R² (0.987 vs 0.970). Na druhom obrazku (bez jasneho
     oznacenia) vysiel rozdiel R² zanedbatelny (~0.0001) - spravne vratene ako
-    'undetermined' namiesto vymyslania si istoty, ktora tam nie je.
+    'neurcite' namiesto vymyslania si istoty, ktora tam nie je.
 
     DOLEZITA OPRAVA (realny nalez z nasadenia): _hollomon_fit_core uz NEVYHADZUJE
     vynimku pri nedostatku bodov (krehky material) - vracia HollomonFit s
     applicable=False (viz jej docstring). Preto tu kontrolujeme .applicable,
     nie try/except. Ak niektory z dvoch fitov nie je aplikovatelny, klasifikacia
-    sa poctivo oznaci ako 'undetermined' (nedostatok dokazov), NIE ako chyba."""
+    sa poctivo oznaci ako 'neurcite' (nedostatok dokazov), NIE ako chyba."""
     fit_engineering = compute_hollomon_fit(
         convert_engineering_to_true(strain, stress, is_percent, rm_index),
         elastic_slope, epsilon0, is_percent,
@@ -236,7 +236,7 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
 
     if r2_as_engineering is None or r2_as_true is None:
         return FormClassification(
-            form_guess="undetermined", r2_as_engineering=r2_as_engineering,
+            form_guess="neurcite", r2_as_engineering=r2_as_engineering,
             r2_as_true=r2_as_true, margin=None,
         )
 
@@ -246,7 +246,7 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
     elif margin < -margin_threshold:
         form_guess = "engineering"
     else:
-        form_guess = "undetermined"
+        form_guess = "neurcite"
 
     return FormClassification(
         form_guess=form_guess, r2_as_engineering=r2_as_engineering,
@@ -261,7 +261,7 @@ def classify_curve_form(strain: np.ndarray, stress: np.ndarray, is_percent: bool
 @dataclass
 class TrueCurveResult:
     true_curve: TrueCurve            # ZOBRAZOVANA krivka - konvertovana AK form_guess=="engineering"
-                                       # alebo "undetermined" (bezpecny default), ALE SUROVA (nekonvertovana)
+                                       # alebo "neurcite" (bezpecny default), ALE SUROVA (nekonvertovana)
                                        # data ak form_guess=="true" (viz nizsie preco)
     hollomon: HollomonFit            # fit podla SKUTOCNE POUZITEJ formy (form_used)
     classification: FormClassification  # AUTOMATICKY NAVRH (len informativny, viz form_used)

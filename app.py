@@ -128,57 +128,6 @@ def reset_downstream_state():
 
 
 # ============================================================================
-# UVITACIE/BETA OKNO - modalne, zobrazi sa raz pri prvom nacitani relacie
-# (st.session_state.welcome_dismissed=False), da sa kedykolvek znova otvorit
-# tlacidlom v bocnom paneli ("ℹ️ About & feedback"). Vysvetluje aplikaciu
-# populariznou formou + ziada o testovanie/spatnu vazbu cez ResearchGate.
-# POZNAMKA: vyzaduje Streamlit >= 1.31 (st.dialog) - requirements.txt necha
-# streamlit nepripnuty na verziu, takze Streamlit Cloud vzdy nainstaluje
-# najnovsiu dostupnu, kde st.dialog uz existuje.
-# ============================================================================
-if "welcome_dismissed" not in st.session_state:
-    st.session_state.welcome_dismissed = False
-
-
-@st.dialog("Welcome to PixelToProperty 👋")
-def show_welcome_dialog():
-    st.markdown(
-        "**Ever needed the exact numbers behind a stress–strain curve from a "
-        "paper, report, or old lab printout — but only had the picture?**\n\n"
-        "PixelToProperty reads the chart image, automatically finds the axes, "
-        "calibrates them (OCR does the reading for you), traces the curve "
-        "pixel by pixel, and turns it back into real (strain, stress) data "
-        "points.\n\n"
-        "From there it goes further: it computes the material's key "
-        "mechanical properties directly from the digitized curve — Young's "
-        "modulus (E), the 0.2% offset yield strength (Rp0.2), ultimate "
-        "tensile strength (Rm), elongation (A), and, if the data supports "
-        "it, the Hollomon strain-hardening exponent (n). You get the "
-        "numbers, a downloadable CSV of the raw points, and a diagnostic "
-        "view of how confident the fit is — no more measuring by eye with "
-        "a ruler and a squint."
-    )
-    st.markdown("---")
-    st.markdown(
-        "**🧪 This is a testing version.** Source charts vary wildly — "
-        "different fonts, colors, gridlines, resolutions — and the app "
-        "won't get everything right yet. I'd be genuinely grateful if you "
-        "tried it on your own curves and let me know what worked, what "
-        "didn't, and what surprised you.\n\n"
-        "**Share feedback:** via my ResearchGate profile → "
-        "[Peter Oslanec](https://www.researchgate.net/profile/Peter-Oslanec-2)"
-    )
-    st.write("")
-    if st.button("Got it, let's start", type="primary", use_container_width=True):
-        st.session_state.welcome_dismissed = True
-        st.rerun()
-
-
-if not st.session_state.welcome_dismissed:
-    show_welcome_dialog()
-
-
-# ============================================================================
 # BOCNY PANEL: logo, krokovnik, info boxy
 # ============================================================================
 def _step_status(step_index: int) -> str:
@@ -198,13 +147,13 @@ def _step_status(step_index: int) -> str:
 
 with st.sidebar:
     st.markdown("### 📐 PixelToProperty")
-    st.markdown('<div class="pp-caption">Tensile test digitization</div>',
+    st.markdown('<div class="pp-caption">Digitalizácia ťahových skúšok</div>',
                 unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("**STEPS**")
+    st.markdown("**POSTUP**")
 
-    step_labels = ["Upload image\nPNG, JPG, JPEG", "Detect frame\nand calibrate axes",
-                   "Digitize curve\nand compute properties"]
+    step_labels = ["Nahrať obrázok\nPNG, JPG, JPEG", "Detegovať rám\na kalibrovať osi",
+                   "Digitalizovať krivku\na vypočítať vlastnosti"]
     step_icons = {"done": "✓", "current": "●", "todo": "○"}
     for i, label in enumerate(step_labels):
         status = _step_status(i)
@@ -217,16 +166,16 @@ with st.sidebar:
         )
 
     st.markdown(
-        '<div class="pp-side-box"><b>ℹ️ How it works</b><br>'
-        "The app automatically finds the chart frame, reads the axis labels "
-        "(OCR), recognizes the curve, digitizes it, and computes mechanical "
-        "properties plus a Hollomon fit.</div>",
+        '<div class="pp-side-box"><b>ℹ️ Ako to funguje</b><br>'
+        "Aplikácia automaticky nájde rám grafu, prečíta popisky osí (OCR), "
+        "rozpozná krivku, digitalizuje ju a vypočíta mechanické vlastnosti "
+        "aj Hollomonov fit.</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="pp-side-box">💡 <b>Good to know</b><br>'
-        "Nothing is stored permanently. Download the CSV with the raw points "
-        "if you want to keep the results.</div>",
+        '<div class="pp-side-box">💡 <b>Dobré vedieť</b><br>'
+        "Nič sa neukladá natrvalo. Stiahni si CSV so surovými bodmi, ak "
+        "chceš výsledky uchovať.</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -234,18 +183,15 @@ with st.sidebar:
         '<br>Streamlit Community Cloud</div>',
         unsafe_allow_html=True,
     )
-    if st.button("ℹ️ About & feedback", use_container_width=True):
-        st.session_state.welcome_dismissed = False
-        st.rerun()
 
 
 # ============================================================================
 # HLAVICKA
 # ============================================================================
-st.markdown("# PixelToProperty — tensile test chart digitization")
+st.markdown("# PixelToProperty — digitalizácia grafov ťahových skúšok")
 st.markdown(
-    '<div class="pp-subtitle">Upload a chart image and get the material\'s '
-    "mechanical properties.</div>",
+    '<div class="pp-subtitle">Nahraj obrázok grafu a získaj mechanické '
+    "vlastnosti materiálu.</div>",
     unsafe_allow_html=True,
 )
 st.write("")
@@ -257,8 +203,8 @@ col_upload, col_preview = st.columns(2)
 
 with col_upload:
     with st.container(border=True):
-        st.subheader("Step 0 — Upload chart image")
-        uploaded_file = st.file_uploader("Upload chart image",
+        st.subheader("Krok 0 — Nahrať obrázok grafu")
+        uploaded_file = st.file_uploader("Nahraj obrázok grafu",
                                           type=["png", "jpg", "jpeg"],
                                           label_visibility="collapsed")
         if uploaded_file is not None:
@@ -274,12 +220,12 @@ with col_upload:
 
 with col_preview:
     with st.container(border=True):
-        st.subheader("Uploaded image preview")
+        st.subheader("Náhľad nahraného obrázka")
         if st.session_state.img_bgr is not None:
             st.image(cv2.cvtColor(_resize_for_display(st.session_state.img_bgr),
                                    cv2.COLOR_BGR2RGB))
         else:
-            st.caption("The image will appear here after upload.")
+            st.caption("Obrázok sa zobrazí tu po nahraní.")
 
 # ============================================================================
 # RIADOK 2: Krok 1 (detekcia ramu) | Krok 2 (digitalizacia)
@@ -288,9 +234,9 @@ col_step1, col_step2 = st.columns(2)
 
 with col_step1:
     with st.container(border=True):
-        st.subheader("Step 1 — Detect frame and calibrate axes")
+        st.subheader("Krok 1 — Detegovať rám a kalibrovať osi")
         disabled_1 = st.session_state.img_bgr is None
-        if st.button("Detect frame and calibrate axes", type="primary",
+        if st.button("Detegovať rám a kalibrovať osi", type="primary",
                       disabled=disabled_1, use_container_width=True):
             try:
                 gray = cv2.cvtColor(st.session_state.img_bgr, cv2.COLOR_BGR2GRAY)
@@ -302,8 +248,8 @@ with col_step1:
                 st.session_state.props = None
                 st.session_state.true_result = None
             except Exception as e:
-                st.error(f"Error detecting frame/axes: {e}")
-                with st.expander("Technical details"):
+                st.error(f"Chyba pri detekcii rámu/osí: {e}")
+                with st.expander("Technický detail"):
                     st.code(traceback.format_exc())
 
         if st.session_state.frame_info is not None:
@@ -317,29 +263,29 @@ with col_step1:
             n_x_out = int(np.sum(~calib.x_inliers))
             n_y_out = int(np.sum(~calib.y_inliers))
             r1, r2 = st.columns(2)
-            r1.metric("X axis - candidates / used",
+            r1.metric("X os - kandidátov / použitých",
                       f"{len(calib.x_ticks_raw)} / {len(calib.x_ticks_raw) - n_x_out}")
-            r2.metric("Y axis - candidates / used",
+            r2.metric("Y os - kandidátov / použitých",
                       f"{len(calib.y_ticks_raw)} / {len(calib.y_ticks_raw) - n_y_out}")
             if calib.x_is_percent_hint is not None:
-                st.caption(f"X axis unit (OCR): **{'%' if calib.x_is_percent_hint else 'fraction'}**")
-            st.success("✓ Calibration successful. Check the green frame. If it doesn't match, try a different image.")
+                st.caption(f"Jednotka osi X (OCR): **{'%' if calib.x_is_percent_hint else 'zlomok'}**")
+            st.success("✓ Kalibrácia úspešná. Skontroluj zelený rám. Ak nesedí, skús iný obrázok.")
 
 with col_step2:
     with st.container(border=True):
-        st.subheader("Step 2 — Digitize curve and compute properties")
+        st.subheader("Krok 2 — Digitalizovať krivku a vypočítať vlastnosti")
         disabled_2 = st.session_state.frame_info is None
         if disabled_2:
-            st.caption("Finish Step 1 first.")
+            st.caption("Najprv dokonči Krok 1.")
 
         form_choice = st.radio(
-            "Input curve form (choose one)",
+            "Forma vstupnej krivky (vyber jednu možnosť)",
             options=["engineering", "true"],
-            format_func=lambda v: "engineering (default)" if v == "engineering" else "true (true stress–strain)",
+            format_func=lambda v: "engineering (predvolené)" if v == "engineering" else "true (true stress–strain)",
             index=0, horizontal=True, disabled=disabled_2,
         )
 
-        if st.button("Digitize curve and compute properties", type="primary",
+        if st.button("Digitalizovať krivku a vypočítať vlastnosti", type="primary",
                       disabled=disabled_2, use_container_width=True):
             try:
                 frame = st.session_state.frame_info
@@ -366,10 +312,10 @@ with col_step2:
                     props.elastic_slope, props.epsilon0, form_override=form_choice,
                 )
                 st.session_state.true_result = true_result
-                st.success("✓ Digitization complete — results below.")
+                st.success("✓ Digitalizácia dokončená — výsledky nižšie.")
             except Exception as e:
-                st.error(f"Error during digitization/computation: {e}")
-                with st.expander("Technical details"):
+                st.error(f"Chyba pri digitalizácii/výpočte: {e}")
+                with st.expander("Technický detail"):
                     st.code(traceback.format_exc())
 
 # ============================================================================
@@ -379,25 +325,25 @@ col_res1, col_res2 = st.columns(2)
 
 with col_res1:
     with st.container(border=True):
-        st.subheader("3.1 Results — engineering properties")
+        st.subheader("3.1 Výsledky — inžinierske vlastnosti")
         if st.session_state.props is None:
-            st.caption("Results will appear after Step 2.")
+            st.caption("Výsledky sa zobrazia po Kroku 2.")
         else:
             props = st.session_state.props
             strain = st.session_state.strain
             stress = st.session_state.stress
 
             m1, m2, m3 = st.columns(3)
-            m1.metric("Curve style", st.session_state.style)
-            m2.metric("Number of points", f"{len(strain):,}".replace(",", " "))
-            m3.metric("Curve color", st.session_state.color)
+            m1.metric("Štýl krivky", st.session_state.style)
+            m2.metric("Počet bodov", f"{len(strain):,}".replace(",", " "))
+            m3.metric("Farba krivky", st.session_state.color)
 
             conf_colors = {"HIGH": "#16A34A", "MEDIUM": "#EA580C", "LOW": "#DC2626"}
             conf_icons = {"HIGH": "🟢", "MEDIUM": "🟠", "LOW": "🔴"}
             c = props.confidence
             st.markdown(
                 f'<div class="pp-confidence" style="color:{conf_colors.get(c, "#1E293B")};">'
-                f"{conf_icons.get(c, '')} Estimate confidence: {c}</div>",
+                f"{conf_icons.get(c, '')} Spoľahlivosť odhadu: {c}</div>",
                 unsafe_allow_html=True,
             )
             for msg in props.confidence_messages:
@@ -405,9 +351,9 @@ with col_res1:
 
             if props.confidence == "LOW" and (props.E_GPa != props.E_GPa):
                 st.warning(
-                    "The elastic region cannot be reliably determined from this "
-                    "image — likely a fundamental resolution limit of the source. "
-                    "E, Rp0.2 and A are not shown, as that would be a misleading number."
+                    "Elastická oblasť sa nedá spoľahlivo určiť z tohto obrázka — "
+                    "pravdepodobne fundamentálny limit rozlíšenia zdroja. E, Rp0.2 "
+                    "a A sa nezobrazujú, bolo by to zavádzajúce číslo."
                 )
             else:
                 v1, v2, v3, v4 = st.columns(4)
@@ -415,46 +361,45 @@ with col_res1:
                 v2.metric("Rp0.2", f"{props.Rp02_MPa:.1f}" if props.Rp02_MPa is not None else "N/F",
                           "MPa" if props.Rp02_MPa is not None else "")
                 v3.metric("Rm", f"{props.Rm_MPa:.1f}", "MPa")
-                v4.metric("A (corrected)", f"{props.A_percent:.2f}", "%")
+                v4.metric("A (korig.)", f"{props.A_percent:.2f}", "%")
 
-                with st.expander("Detailed fit diagnostics"):
+                with st.expander("Podrobná diagnostika fitu"):
                     d1, d2, d3, d4, d5 = st.columns(5)
-                    d1.metric("Points in window", props.n_window)
-                    d2.metric("R² (through origin)", f"{props.elastic_r2:.3f}")
+                    d1.metric("Body v okne", props.n_window)
+                    d2.metric("R² (cez 0)", f"{props.elastic_r2:.3f}")
                     d3.metric("Sm(rel) ISO", f"{props.sm_rel_percent:.2f} %")
                     d4.metric("reach95", f"{props.reach95_ratio:.2f}")
-                    d5.metric("Range coverage", f"{props.stress_span_fraction:.2f}")
+                    d5.metric("Pokrytie rozsahu", f"{props.stress_span_fraction:.2f}")
                     if props.yield_ratio is not None:
                         st.caption(f"Yield ratio (Rp0.2/Rm): {props.yield_ratio:.3f}")
 
                 fig, ax = plt.subplots(figsize=(6, 4.5))
                 ax.plot(strain, stress, "o", markersize=2.5, color="#DC2626", alpha=0.5,
-                        label="digitized points")
+                        label="digitalizované body")
                 a, b = props.elastic_window
                 ax.plot(strain[a:b], stress[a:b], "-", linewidth=2.5, color="#2563EB",
-                        label="elastic core (fit)")
+                        label="elastické jadro (fit)")
 
-                # Dashed reference elastic line (E) extended across the whole
-                # chart - visually shows EXACTLY what slope was chosen for the
-                # linear (elastic) part, not just the segment used for the fit itself.
+                # Ciarkovana referencna elasticka priamka (E) natiahnuta cez cely
+                # graf - vizualne ukazuje AKY presne sklon bol zvoleny pre linearnu
+                # (elasticku) cast, nie len usek pouzity na samotny fit.
                 x_max_plot = max(strain.max(), props.Rm_strain) * 1.05
                 x_ref = np.array([0.0, x_max_plot])
                 y_ref = props.elastic_slope * x_ref
                 ax.plot(x_ref, y_ref, "--", linewidth=1.3, color="#2563EB", alpha=0.55,
-                        label="reference slope E (extended)")
+                        label="referenčný sklon E (predĺžený)")
 
                 if props.Rp02_MPa is not None:
-                    # Dashed OFFSET line (parallel to E, shifted by 0.2% strain) -
-                    # exactly the one used to determine the conventional (offset)
-                    # yield strength Rp0.2. Extended to the point where it
-                    # intersects the curve (Rp0.2), to clearly show the geometric
-                    # principle.
+                    # Ciarkovana OFFSET priamka (rovnobezna s E, posunuta o 0.2%
+                    # deformacie) - presne tá, ktorou sa dohovorená (zmluvná)
+                    # medza klzu Rp0.2 urcuje. Natiahnuta az po bod, kde pretina
+                    # krivku (Rp0.2), aby bolo jasne vidno geometricky princip.
                     offset = 0.2 if props.strain_unit_percent else 0.002
                     x_offset_end = props.Rp02_strain * 1.15
                     x_offset_line = np.array([offset, x_offset_end])
                     y_offset_line = props.elastic_slope * (x_offset_line - offset)
                     ax.plot(x_offset_line, y_offset_line, "--", linewidth=1.5, color="#7C3AED",
-                            alpha=0.7, label="0.2% offset (yield strength)")
+                            alpha=0.7, label="0,2 % offset (zmluvná medza klzu)")
                     ax.plot(props.Rp02_strain, props.Rp02_MPa, "s", color="#7C3AED",
                             markersize=8, label="Rp0.2")
                 ax.plot(props.Rm_strain, props.Rm_MPa, "o", color="#1E293B",
@@ -470,33 +415,33 @@ with col_res1:
             csv_data = "strain,stress_MPa\n" + "\n".join(
                 f"{s:.6f},{t:.6f}" for s, t in zip(strain, stress)
             )
-            st.download_button("⬇ Download CSV", csv_data,
-                                file_name="digitized_curve.csv", mime="text/csv",
+            st.download_button("⬇ Stiahnuť CSV", csv_data,
+                                file_name="digitalizovana_krivka.csv", mime="text/csv",
                                 use_container_width=True)
 
 with col_res2:
     with st.container(border=True):
-        st.subheader("3.2 True curve + Hollomon fit")
+        st.subheader("3.2 True krivka + Hollomonov fit")
         if st.session_state.true_result is None:
-            st.caption("Results will appear after Step 2.")
+            st.caption("Výsledky sa zobrazia po Kroku 2.")
         else:
             tr = st.session_state.true_result
             props = st.session_state.props
 
             agree = tr.classification.form_guess == tr.form_used
             g1, g2 = st.columns(2)
-            g1.metric("Form used (specified)", tr.form_used)
-            g2.metric("Algorithm suggests", tr.classification.form_guess)
-            st.caption("Match ✓" if agree else "⚠️ NOTE: the algorithm would guess a different form — please verify")
+            g1.metric("Použitá forma (zadaná)", tr.form_used)
+            g2.metric("Algoritmus navrhuje", tr.classification.form_guess)
+            st.caption("Zhodujú sa ✓" if agree else "⚠️ POZOR: algoritmus by tipoval inú formu — over si to")
 
             holl = tr.hollomon
             true_c = tr.true_curve
 
             if not holl.applicable:
-                st.warning(f"Hollomon fit not available: {holl.message}")
+                st.warning(f"Hollomonov fit nie je dostupný: {holl.message}")
                 fig2, ax2 = plt.subplots(figsize=(6, 4.5))
                 ax2.plot(true_c.true_strain, true_c.true_stress, "o", markersize=2.5,
-                          color="#DC2626", alpha=0.6, label="true curve (up to Rm)")
+                          color="#DC2626", alpha=0.6, label="true krivka (po Rm)")
                 ax2.set_xlabel("true strain")
                 ax2.set_ylabel("true stress (MPa)")
                 ax2.legend(fontsize=8, loc="lower right")
@@ -504,13 +449,13 @@ with col_res2:
                 st.pyplot(fig2, use_container_width=True)
             else:
                 h1, h2, h3 = st.columns(3)
-                h1.metric("n (hardening exponent)", f"{holl.n:.3f}")
+                h1.metric("n (exponent spevnenia)", f"{holl.n:.3f}")
                 h2.metric("K (MPa)", f"{holl.K_MPa:.0f}")
-                h3.metric("Fit R²", f"{holl.r2:.3f}")
+                h3.metric("R² fitu", f"{holl.r2:.3f}")
 
                 fig2, ax2 = plt.subplots(figsize=(6, 4.5))
                 ax2.plot(true_c.true_strain, true_c.true_stress, "o", markersize=2.5,
-                          color="#DC2626", alpha=0.6, label="True curve")
+                          color="#DC2626", alpha=0.6, label="True krivka")
                 eps_fit = np.linspace(max(holl.strain_range[0], 1e-6), holl.strain_range[1], 100)
                 sigma_fit = holl.K_MPa * eps_fit ** holl.n
                 eps_elastic_fit = sigma_fit / props.elastic_slope
@@ -523,11 +468,11 @@ with col_res2:
                 ax2.grid(alpha=0.25)
                 st.pyplot(fig2, use_container_width=True)
 
-                st.info("ℹ️ Hollomon fit is available. The material has a pronounced plastic region.")
+                st.info("ℹ️ Hollomonov fit je dostupný. Materiál má výraznú plastickú oblasť.")
 
 st.write("")
 st.divider()
 st.caption(
-    "Note: this app does not store anything permanently — the image and results only "
-    "exist for the duration of this browser session."
+    "Poznámka: appka nič neukladá natrvalo — obrázok aj výsledky existujú len počas "
+    "tejto relácie v prehliadači."
 )
