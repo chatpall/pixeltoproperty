@@ -39,7 +39,7 @@ import true_curve as tc
 # ============================================================================
 # CONTACT INFO (shown in the welcome dialog and sidebar)
 # ============================================================================
-CONTACT_EMAIL = "chatpall+pixeltoproperty@gmail.com"
+CONTACT_EMAIL = "chatpall+pixeltoproperty@protonmail.com"
 
 
 # ============================================================================
@@ -222,6 +222,34 @@ with st.sidebar:
         "you want to keep the results.</div>",
         unsafe_allow_html=True,
     )
+    with st.expander("🗺️ Roadmap"):
+        st.markdown("**Done — initial baseline**")
+        st.markdown(
+            "- OCR-based curve digitization (frame + axis detection, "
+            "axis-label reading, curve extraction)\n"
+            "- Axis calibration from detected tick marks\n"
+            "- Computation of engineering mechanical properties "
+            "(E, Rp0.2, Rm, elongation) and the Hollomon true-stress "
+            "hardening fit"
+        )
+        st.markdown("**Planned — future features**")
+        st.markdown(
+            "- Manual correction of digitized points — delete/add outlier "
+            "points directly in the preview before computing properties\n"
+            "- Batch processing — upload multiple images at once and export "
+            "a summary table (E, Rp0.2, Rm, A for each)\n"
+            "- PDF report export — a full report with charts and values, "
+            "not just CSV\n"
+            "- Save/export calibration settings — reuse the same "
+            "calibration across a series of charts from the same source "
+            "(e.g. the same testing machine/software)\n"
+            "- Compare multiple curves on one chart — for comparing "
+            "materials\n"
+            "- Detection and handling of multiple curves within a single "
+            "image (when a chart contains several samples at once)\n"
+            "- Session history/versioning of results — undo/redo between "
+            "different calibration attempts"
+        )
     st.markdown(
         f'<div class="pp-side-box">✉️ <b>Questions?</b><br>'
         f'{CONTACT_EMAIL}</div>',
