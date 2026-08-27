@@ -2,7 +2,7 @@
 
 **Turn a tensile-test chart image into digitized data and mechanical properties.**
 
-PixelToProperty is a free web tool that takes an image of a stress–strain
+PixelToProperty is a web tool that takes an image of a stress–strain
 curve — a screenshot, a scanned figure, or a photo of a printed graph — and
 automatically extracts the underlying data points and standard mechanical
 properties: Young's modulus (E), 0.2% offset yield strength (Rp0.2),
